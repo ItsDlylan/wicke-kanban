@@ -550,19 +550,19 @@ impl WorktreeManager {
             .join(format!("{}-worktrees", project_name))
     }
 
-    /// Get the base directory for wicke-kanban worktrees
+    /// Get the base directory for wickeban worktrees
     pub fn get_worktree_base_dir() -> std::path::PathBuf {
         if let Some(override_path) = WORKSPACE_DIR_OVERRIDE.get() {
             // Always use app-owned subdirectory within custom path for safety.
             // This ensures orphan cleanup never touches user's existing folders.
-            return override_path.join(".wicke-kanban-workspaces");
+            return override_path.join(".wickeban-workspaces");
         }
         Self::get_default_worktree_base_dir()
     }
 
     /// Get the default base directory (ignoring any override)
     pub fn get_default_worktree_base_dir() -> std::path::PathBuf {
-        utils::path::get_vibe_kanban_temp_dir().join("worktrees")
+        utils::path::get_wickeban_temp_dir().join("worktrees")
     }
 
     pub async fn cleanup_suspected_worktree(path: &Path) -> Result<bool, WorktreeError> {

@@ -1,20 +1,20 @@
-# Wicke Kanban
+# Wickeban
 
 > A visual project management tool for developers that integrates with git repositories and coding agents like Claude Code and Amp.
 
 ## Quick Start
 
-Run Wicke Kanban instantly without installation:
+Run Wickeban instantly without installation:
 
 ```bash
-npx wicke-kanban
+npx wickeban
 ```
 
 This will launch the application locally and open it in your browser automatically.
 
-## What is Wicke Kanban?
+## What is Wickeban?
 
-Wicke Kanban is a modern project management tool designed specifically for developers. It helps you organize your coding projects with kanban-style task management while providing powerful integrations with git repositories and AI coding agents.
+Wickeban is a modern project management tool designed specifically for developers. It helps you organize your coding projects with kanban-style task management while providing powerful integrations with git repositories and AI coding agents.
 
 ### ✨ Key Features
 
@@ -62,7 +62,7 @@ Wicke Kanban is a modern project management tool designed specifically for devel
 
 ## Core Functionality
 
-Wicke Kanban provides a complete project management experience with these key capabilities:
+Wickeban provides a complete project management experience with these key capabilities:
 
 **Project Repository Management**
 - Full CRUD operations for managing coding projects
@@ -97,7 +97,7 @@ Wicke Kanban provides a complete project management experience with these key ca
 
 ## Configuration
 
-Wicke Kanban supports customization through its configuration system:
+Wickeban supports customization through its configuration system:
 
 - **Editor Integration**: Choose your preferred code editor
 - **Sound Notifications**: Customize completion sounds
@@ -153,7 +153,7 @@ Wicke Kanban supports customization through its configuration system:
 **Ready to supercharge your development workflow?**
 
 ```bash
-npx wicke-kanban
+npx wickeban
 ```
 
 *Start managing your projects with the power of AI coding agents today!*

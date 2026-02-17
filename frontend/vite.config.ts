@@ -99,7 +99,7 @@ export default defineConfig({
         ],
       },
     }),
-    sentryVitePlugin({ org: 'bloop-ai', project: 'wicke-kanban' }),
+    sentryVitePlugin({ org: 'bloop-ai', project: 'wickeban' }),
     executorSchemasPlugin(),
   ],
   resolve: {

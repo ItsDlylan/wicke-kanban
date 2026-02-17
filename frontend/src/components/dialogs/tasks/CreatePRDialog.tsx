@@ -81,7 +81,7 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
         return;
       }
 
-      setPrTitle(`${task.title} (wicke-kanban)`);
+      setPrTitle(`${task.title} (wickeban)`);
       setPrBody(task.description || '');
       setError(null);
       setGhCliHelp(null);

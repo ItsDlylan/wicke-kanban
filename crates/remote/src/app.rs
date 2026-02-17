@@ -118,7 +118,7 @@ impl Server {
         }
 
         let http_client = reqwest::Client::builder()
-            .user_agent("WickeKanbanRemote/1.0")
+            .user_agent("WickebanRemote/1.0")
             .build()
             .context("failed to create HTTP client")?;
 

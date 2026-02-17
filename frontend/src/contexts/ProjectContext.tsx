@@ -47,9 +47,9 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   // Centralized page title management
   useEffect(() => {
     if (project) {
-      document.title = `${project.name} | wicke-kanban`;
+      document.title = `${project.name} | wickeban`;
     } else {
-      document.title = 'wicke-kanban';
+      document.title = 'wickeban';
     }
   }, [project]);
 

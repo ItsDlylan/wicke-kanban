@@ -51,7 +51,7 @@ RUN mkdir -p /app/bin
 # and its feature flag from Cargo.toml so cargo doesn't try to fetch the private git repo.
 # Also remove the Cargo.lock which references the private repo.
 RUN if [ -z "${FEATURES}" ]; then \
-      sed -i '/^billing = {.*vibe-kanban-private.*/d' crates/remote/Cargo.toml; \
+      sed -i '/^billing = {.*wickeban-private.*/d' crates/remote/Cargo.toml; \
       sed -i '/^# private crate for billing/d' crates/remote/Cargo.toml; \
       sed -i '/^vk-billing = \["dep:billing"\]/d' crates/remote/Cargo.toml; \
       rm -f crates/remote/Cargo.lock; \

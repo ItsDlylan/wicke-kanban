@@ -14,7 +14,7 @@ use utils::{
 };
 
 #[derive(Debug, Error)]
-pub enum WickeKanbanError {
+pub enum WickebanError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -26,7 +26,7 @@ pub enum WickeKanbanError {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), WickeKanbanError> {
+async fn main() -> Result<(), WickebanError> {
     // Install rustls crypto provider before any TLS operations
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()

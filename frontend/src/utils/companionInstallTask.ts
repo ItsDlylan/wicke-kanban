@@ -1,14 +1,14 @@
 export const COMPANION_INSTALL_TASK_TITLE =
-  'Install and integrate Wicke Kanban Web Companion';
+  'Install and integrate Wickeban Web Companion';
 
-export const COMPANION_INSTALL_TASK_DESCRIPTION = `Goal: Install and integrate the wicke-kanban-web-companion so it renders at the app root in development.
+export const COMPANION_INSTALL_TASK_DESCRIPTION = `Goal: Install and integrate the wickeban-web-companion so it renders at the app root in development.
 
 Do:
 1) Detect package manager from lockfiles and use it:
-   - pnpm-lock.yaml → pnpm add wicke-kanban-web-companion
-   - yarn.lock → yarn add wicke-kanban-web-companion
-   - package-lock.json → npm i wicke-kanban-web-companion
-   - bun.lockb → bun add wicke-kanban-web-companion
+   - pnpm-lock.yaml → pnpm add wickeban-web-companion
+   - yarn.lock → yarn add wickeban-web-companion
+   - package-lock.json → npm i wickeban-web-companion
+   - bun.lockb → bun add wickeban-web-companion
    If already listed in package.json dependencies, skip install.
 
 2) Detect framework and app entry:
@@ -19,8 +19,8 @@ Do:
    Confirm by reading package.json and directory structure.
 
 3) Integrate the component:
-   import { WickeKanbanWebCompanion } from 'wicke-kanban-web-companion';
-   - Vite/CRA: render <WickeKanbanWebCompanion /> at the app root.
+   import { WickebanWebCompanion } from 'wickeban-web-companion';
+   - Vite/CRA: render <WickebanWebCompanion /> at the app root.
    - Next.js (pages): render in pages/_app.*
    - Next.js (app): render in app/layout.* or a client providers component.
    - For Next.js, if SSR issues arise, use dynamic import with ssr: false.
@@ -30,6 +30,6 @@ Do:
    - Ensure it compiles and renders without SSR/hydration errors.
 
 Acceptance:
-- wicke-kanban-web-companion is installed in the correct package.
+- wickeban-web-companion is installed in the correct package.
 - The component is rendered once at the app root without SSR/hydration errors.
 - Build/type-check passes.`;

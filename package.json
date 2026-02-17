@@ -1,9 +1,9 @@
 {
-  "name": "wicke-kanban",
+  "name": "wickeban",
   "version": "0.1.13",
   "private": true,
   "bin": {
-    "wicke-kanban": "npx-cli/bin/cli.js"
+    "wickeban": "npx-cli/bin/cli.js"
   },
   "files": [
     "npx-cli/bin/cli.js",

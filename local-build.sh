@@ -60,28 +60,28 @@ cargo build --release --bin mcp_task_server --manifest-path Cargo.toml
 echo "📦 Creating distribution package..."
 
 # Copy the main binary
-cp ${CARGO_TARGET_DIR}/release/server vibe-kanban
-zip -q vibe-kanban.zip vibe-kanban
-rm -f vibe-kanban 
-mv vibe-kanban.zip npx-cli/dist/$PLATFORM/vibe-kanban.zip
+cp ${CARGO_TARGET_DIR}/release/server wickeban
+zip -q wickeban.zip wickeban
+rm -f wickeban 
+mv wickeban.zip npx-cli/dist/$PLATFORM/wickeban.zip
 
 # Copy the MCP binary
-cp ${CARGO_TARGET_DIR}/release/mcp_task_server vibe-kanban-mcp
-zip -q vibe-kanban-mcp.zip vibe-kanban-mcp
-rm -f vibe-kanban-mcp
-mv vibe-kanban-mcp.zip npx-cli/dist/$PLATFORM/vibe-kanban-mcp.zip
+cp ${CARGO_TARGET_DIR}/release/mcp_task_server wickeban-mcp
+zip -q wickeban-mcp.zip wickeban-mcp
+rm -f wickeban-mcp
+mv wickeban-mcp.zip npx-cli/dist/$PLATFORM/wickeban-mcp.zip
 
 # Copy the Review CLI binary
-cp ${CARGO_TARGET_DIR}/release/review vibe-kanban-review
-zip -q vibe-kanban-review.zip vibe-kanban-review
-rm -f vibe-kanban-review
-mv vibe-kanban-review.zip npx-cli/dist/$PLATFORM/vibe-kanban-review.zip
+cp ${CARGO_TARGET_DIR}/release/review wickeban-review
+zip -q wickeban-review.zip wickeban-review
+rm -f wickeban-review
+mv wickeban-review.zip npx-cli/dist/$PLATFORM/wickeban-review.zip
 
 echo "✅ Build complete!"
 echo "📁 Files created:"
-echo "   - npx-cli/dist/$PLATFORM/vibe-kanban.zip"
-echo "   - npx-cli/dist/$PLATFORM/vibe-kanban-mcp.zip"
-echo "   - npx-cli/dist/$PLATFORM/vibe-kanban-review.zip"
+echo "   - npx-cli/dist/$PLATFORM/wickeban.zip"
+echo "   - npx-cli/dist/$PLATFORM/wickeban-mcp.zip"
+echo "   - npx-cli/dist/$PLATFORM/wickeban-review.zip"
 echo ""
 echo "🚀 To test locally, run:"
 echo "   cd npx-cli && node bin/cli.js"

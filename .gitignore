@@ -72,8 +72,8 @@ remote-frontend/dist
 build-npm-package-codesign.sh
 
 npx-cli/dist
-npx-cli/wicke-kanban-*
-wicke-kanban-*.tgz
+npx-cli/wickeban-*
+wickeban-*.tgz
 
 # Development ports file
 .dev-ports.json
@@ -82,7 +82,7 @@ dev_assets
 /frontend/.env.sentry-build-plugin
 .ssh
 
-wicke-kanban-cloud/
+wickeban-cloud/
 
 .jj
 .sisyphus/

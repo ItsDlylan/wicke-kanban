@@ -21,7 +21,7 @@ export type CommentAnnotation =
   | { type: 'github'; comment: NormalizedGitHubComment };
 
 /**
- * Maps wicke-kanban's DiffChangeKind to pierre/diffs ChangeTypes.
+ * Maps wickeban's DiffChangeKind to pierre/diffs ChangeTypes.
  *
  * Mapping:
  * - 'added' → 'new'
@@ -70,12 +70,12 @@ function getFilePath(diff: Diff): string {
 }
 
 /**
- * Transforms a wicke-kanban Diff to pierre/diffs FileDiffMetadata.
+ * Transforms a wickeban Diff to pierre/diffs FileDiffMetadata.
  *
  * Uses parseDiffFromFile from @pierre/diffs to generate the diff metadata
  * from old and new file contents.
  *
- * @param diff - The wicke-kanban Diff object
+ * @param diff - The wickeban Diff object
  * @returns FileDiffMetadata for use with pierre/diffs components
  */
 export function transformDiffToFileDiffMetadata(

@@ -468,7 +468,7 @@ pub async fn review_failed(
         // Post PR comment instead of sending email
         if let Some(github_app) = state.github_app() {
             let comment = format!(
-                "## Wicke Kanban Review Failed\n\n\
+                "## Wickeban Review Failed\n\n\
                 Unfortunately, the code review could not be completed.\n\n\
                 Review ID: `{}`",
                 review_id

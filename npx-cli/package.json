@@ -1,16 +1,16 @@
 {
-  "name": "wicke-kanban",
+  "name": "wickeban",
   "private": false,
   "version": "0.1.13",
   "main": "index.js",
   "bin": {
-    "wicke-kanban": "bin/cli.js"
+    "wickeban": "bin/cli.js"
   },
   "keywords": [],
   "author": "",
   "repository": {},
   "license": "",
-  "description": "NPX wrapper around wicke-kanban and wicke-kanban-mcp",
+  "description": "NPX wrapper around wickeban and wickeban-mcp",
   "dependencies": {
     "adm-zip": "^0.5.16"
   },

@@ -1,9 +1,9 @@
 {
-  "wicke_kanban": {
+  "wickeban": {
     "command": "npx",
     "args": [
       "-y",
-      "wicke-kanban@latest",
+      "wickeban@latest",
       "--mcp"
     ]
   },
@@ -45,9 +45,9 @@
     ]
   },
   "meta": {
-    "wicke_kanban": {
-      "name": "Wicke Kanban",
-      "description": "Create, update and delete Wicke Kanban tasks",
+    "wickeban": {
+      "name": "Wickeban",
+      "description": "Create, update and delete Wickeban tasks",
       "url": "",
       "icon": "favicon-vk-light.svg"
     },
