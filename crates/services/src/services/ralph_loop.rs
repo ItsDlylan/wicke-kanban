@@ -167,7 +167,8 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
         } else {
             tracing::info!(
                 "Sprint workspace {} done, but parent {} has other active sprints",
-                parent_workspace_id, parent_task.id
+                parent_workspace_id,
+                parent_task.id
             );
         }
     } else {

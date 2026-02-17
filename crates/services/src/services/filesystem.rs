@@ -182,7 +182,14 @@ impl FilesystemService {
 
         #[cfg(not(feature = "qa-mode"))]
         {
-            let search_strings = ["repos", "dev", "work", "code", "projects"];
+            let search_strings = [
+                "repos",
+                "dev",
+                "work",
+                "code",
+                "projects",
+                "Desktop/Projects",
+            ];
             let home_dir = Self::get_home_directory();
             let mut paths: Vec<PathBuf> = search_strings
                 .iter()
