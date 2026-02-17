@@ -23,7 +23,9 @@ use deployment::Deployment;
 use executors::profile::ExecutorProfileId;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
-use services::services::{container::ContainerService, workspace_manager::WorkspaceManager};
+use services::services::{
+    auto_planner, container::ContainerService, workspace_manager::WorkspaceManager,
+};
 use sqlx::Error as SqlxError;
 use ts_rs::TS;
 use utils::response::ApiResponse;
@@ -106,7 +108,7 @@ pub async fn get_task(
 
 pub async fn create_task(
     State(deployment): State<DeploymentImpl>,
-    Json(payload): Json<CreateTask>,
+    Json(mut payload): Json<CreateTask>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
     let id = Uuid::new_v4();
 
@@ -116,10 +118,27 @@ pub async fn create_task(
         payload.project_id
     );
 
+    // Top-level tasks (no parent) get auto-plan generation
+    let is_top_level = payload.parent_task_id.is_none() && payload.parent_workspace_id.is_none();
+    if is_top_level {
+        payload.plan_status = Some("pending".to_string());
+    }
+
     let task = Task::create(&deployment.db().pool, &payload, id).await?;
 
     if let Some(image_ids) = &payload.image_ids {
         TaskImage::associate_many_dedup(&deployment.db().pool, task.id, image_ids).await?;
+    }
+
+    // Spawn background auto-plan generation for top-level tasks
+    if is_top_level {
+        auto_planner::spawn_auto_plan(
+            deployment.db().pool.clone(),
+            task.id,
+            task.project_id,
+            task.title.clone(),
+            task.description.clone(),
+        );
     }
 
     deployment
@@ -402,10 +421,27 @@ pub async fn delete_task(
     Ok((StatusCode::ACCEPTED, ResponseJson(ApiResponse::success(()))))
 }
 
+pub async fn regenerate_plan(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
+    auto_planner::spawn_auto_plan(
+        deployment.db().pool.clone(),
+        task.id,
+        task.project_id,
+        task.title.clone(),
+        task.description.clone(),
+    );
+
+    // Return the task as-is; plan_status will be updated asynchronously
+    Ok(ResponseJson(ApiResponse::success(task)))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_actions_router = Router::new()
         .route("/", put(update_task))
-        .route("/", delete(delete_task));
+        .route("/", delete(delete_task))
+        .route("/regenerate-plan", post(regenerate_plan));
 
     let task_id_router = Router::new()
         .route("/", get(get_task))

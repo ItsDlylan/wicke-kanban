@@ -65,6 +65,7 @@ export function NoServerContent({
         parent_task_id: null,
         image_ids: null,
         sort_order: null,
+        plan_status: null,
       },
       executor_profile_id: config.executor_profile,
       repos,

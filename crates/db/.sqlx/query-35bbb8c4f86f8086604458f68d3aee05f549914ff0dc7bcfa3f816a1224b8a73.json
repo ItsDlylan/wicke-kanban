@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.plan, t.plan_status, t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'todo'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -44,13 +44,23 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "plan",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "plan_status",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 11,
         "type_info": "Text"
       }
     ],
@@ -66,9 +76,11 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "433a9071cb9a733a20fa7c89934a402ad07dc6fe4c976c5c9c8d2f0e34d35956"
+  "hash": "35bbb8c4f86f8086604458f68d3aee05f549914ff0dc7bcfa3f816a1224b8a73"
 }

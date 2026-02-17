@@ -374,6 +374,13 @@ export const tasksApi = {
     });
     return handleApiResponse<void>(response);
   },
+
+  regeneratePlan: async (taskId: string): Promise<Task> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/regenerate-plan`, {
+      method: 'POST',
+    });
+    return handleApiResponse<Task>(response);
+  },
 };
 
 export const specSheetsApi = {

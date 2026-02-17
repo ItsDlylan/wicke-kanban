@@ -20,6 +20,7 @@ import { EditBranchNameDialog } from '@/components/dialogs/tasks/EditBranchNameD
 import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { SpecSheetDialog } from '@/components/dialogs/tasks/SpecSheetDialog';
+import { PlanViewDialog } from '@/components/dialogs/tasks/PlanViewDialog';
 import { SprintPlannerDialog } from '@/components/dialogs/tasks/SprintPlannerDialog';
 
 import { useNavigate } from 'react-router-dom';
@@ -121,6 +122,17 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleViewPlan = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    PlanViewDialog.show({
+      taskId: task.id,
+      taskTitle: task.title,
+      plan: task.plan ?? null,
+      planStatus: task.plan_status ?? null,
+    });
+  };
+
   const handleSprintPlanner = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!task) return;
@@ -214,6 +226,12 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
               <DropdownMenuLabel>{t('actionsMenu.task')}</DropdownMenuLabel>
               <DropdownMenuItem disabled={!projectId} onClick={handleSpecSheet}>
                 Spec Sheet
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!task?.plan_status}
+                onClick={handleViewPlan}
+              >
+                View Plan
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={

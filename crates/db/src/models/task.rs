@@ -35,6 +35,8 @@ pub struct Task {
     pub parent_workspace_id: Option<Uuid>, // Foreign key to parent Workspace (sprint execution)
     pub parent_task_id: Option<Uuid>,      // Foreign key to parent Task (decomposition)
     pub sort_order: i32,
+    pub plan: Option<String>,
+    pub plan_status: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -79,6 +81,7 @@ pub struct CreateTask {
     pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
     pub sort_order: Option<i32>,
+    pub plan_status: Option<String>,
 }
 
 impl CreateTask {
@@ -96,6 +99,7 @@ impl CreateTask {
             parent_task_id: None,
             image_ids: None,
             sort_order: None,
+            plan_status: None,
         }
     }
 }
@@ -138,6 +142,8 @@ impl Task {
   t.created_at                    AS "created_at!: DateTime<Utc>",
   t.updated_at                    AS "updated_at!: DateTime<Utc>",
   t.sort_order                    AS "sort_order!: i32",
+  t.plan                          AS "plan: String",
+  t.plan_status                   AS "plan_status: String",
 
   CASE WHEN EXISTS (
     SELECT 1
@@ -190,6 +196,8 @@ ORDER BY t.created_at DESC"#,
                     parent_workspace_id: rec.parent_workspace_id,
                     parent_task_id: rec.parent_task_id,
                     sort_order: rec.sort_order,
+                    plan: rec.plan,
+                    plan_status: rec.plan_status,
                     created_at: rec.created_at,
                     updated_at: rec.updated_at,
                 },
@@ -205,7 +213,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                ORDER BY created_at ASC"#
         )
@@ -216,7 +224,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE id = $1"#,
             id
@@ -228,7 +236,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -246,9 +254,9 @@ ORDER BY t.created_at DESC"#,
         let sort_order = data.sort_order.unwrap_or(0);
         sqlx::query_as!(
             Task,
-            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, parent_task_id, sort_order)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, parent_task_id, sort_order, plan_status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             task_id,
             data.project_id,
             data.title,
@@ -256,7 +264,8 @@ ORDER BY t.created_at DESC"#,
             status,
             data.parent_workspace_id,
             data.parent_task_id,
-            sort_order
+            sort_order,
+            data.plan_status
         )
         .fetch_one(pool)
         .await
@@ -276,7 +285,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET title = $3, description = $4, status = $5, parent_workspace_id = $6
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             project_id,
             title,
@@ -354,7 +363,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,
@@ -407,7 +416,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.plan, t.plan_status, t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks t
                WHERE t.parent_workspace_id = $1
                  AND t.status = 'todo'
@@ -449,7 +458,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_task_id = $1
                ORDER BY sort_order ASC"#,
@@ -475,6 +484,40 @@ ORDER BY t.created_at DESC"#,
         .await?;
 
         Ok(result.total > 0 && result.total == result.done)
+    }
+
+    /// Update the plan text and plan_status for a task.
+    pub async fn update_plan(
+        pool: &SqlitePool,
+        id: Uuid,
+        plan: &str,
+        plan_status: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE tasks SET plan = $2, plan_status = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            plan,
+            plan_status
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Update only the plan_status for a task.
+    pub async fn update_plan_status(
+        pool: &SqlitePool,
+        id: Uuid,
+        plan_status: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE tasks SET plan_status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            plan_status
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
     }
 
     /// Count children tasks and how many are done.
