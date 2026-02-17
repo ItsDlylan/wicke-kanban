@@ -534,12 +534,28 @@ impl WorktreeManager {
         .map_err(|e| WorktreeError::TaskJoin(format!("{e}")))?
     }
 
-    /// Get the base directory for vibe-kanban worktrees
+    /// Get the project-relative base directory for worktrees.
+    /// Places worktrees at `{repo_parent}/{project_name}-worktrees/`.
+    /// Falls back to the global base dir when `WORKSPACE_DIR_OVERRIDE` is set.
+    pub fn get_project_worktree_base_dir(
+        project_name: &str,
+        primary_repo_path: &Path,
+    ) -> std::path::PathBuf {
+        if WORKSPACE_DIR_OVERRIDE.get().is_some() {
+            return Self::get_worktree_base_dir();
+        }
+        primary_repo_path
+            .parent()
+            .unwrap_or(primary_repo_path)
+            .join(format!("{}-worktrees", project_name))
+    }
+
+    /// Get the base directory for wicke-kanban worktrees
     pub fn get_worktree_base_dir() -> std::path::PathBuf {
         if let Some(override_path) = WORKSPACE_DIR_OVERRIDE.get() {
             // Always use app-owned subdirectory within custom path for safety.
             // This ensures orphan cleanup never touches user's existing folders.
-            return override_path.join(".vibe-kanban-workspaces");
+            return override_path.join(".wicke-kanban-workspaces");
         }
         Self::get_default_worktree_base_dir()
     }

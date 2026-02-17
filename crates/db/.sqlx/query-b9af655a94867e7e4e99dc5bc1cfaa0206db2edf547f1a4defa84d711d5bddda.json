@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\", overview, requirements, acceptance_criteria, constraints, tech_notes, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM spec_sheets\n               WHERE task_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "overview",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "requirements",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "acceptance_criteria",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "constraints",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "tech_notes",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b9af655a94867e7e4e99dc5bc1cfaa0206db2edf547f1a4defa84d711d5bddda"
+}

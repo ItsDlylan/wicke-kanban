@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) as \"total!: i64\",\n                      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as \"done!: i64\"\n               FROM tasks\n               WHERE parent_task_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "total!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "done!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "0fc55003c1ffa30c10f72f83fc44c047b5f3153628344383282539707d19ef4f"
+}

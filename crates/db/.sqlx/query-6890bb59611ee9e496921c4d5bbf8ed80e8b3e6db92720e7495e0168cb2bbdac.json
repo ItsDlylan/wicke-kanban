@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'todo'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "project_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!: TaskStatus",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "parent_workspace_id: Uuid",
+        "ordinal": 5,
+        "type_info": "Blob"
+      },
+      {
+        "name": "parent_task_id: Uuid",
+        "ordinal": 6,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sort_order!: i32",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6890bb59611ee9e496921c4d5bbf8ed80e8b3e6db92720e7495e0168cb2bbdac"
+}

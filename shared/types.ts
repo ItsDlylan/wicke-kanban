@@ -38,17 +38,23 @@ export type CreateTag = { tag_name: string, content: string, };
 
 export type UpdateTag = { tag_name: string | null, content: string | null, };
 
-export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
+export type TaskStatus = "backlog" | "todo" | "spec" | "plan" | "ralph" | "inreview" | "done" | "cancelled";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, created_at: string, updated_at: string, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, created_at: string, updated_at: string, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, sort_order: number | null, };
 
 export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+
+export type SpecSheet = { id: string, task_id: string, overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, created_at: string, updated_at: string, };
+
+export type CreateSpecSheet = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
+
+export type UpdateSpecSheet = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
@@ -234,27 +240,11 @@ export type UpdateMemberRoleRequest = { role: MemberRole, };
 
 export type UpdateMemberRoleResponse = { user_id: string, role: MemberRole, };
 
-export type MigrationRequest = { organization_id: string, 
-/**
- * List of local project IDs to migrate.
- */
-project_ids: Array<string>, };
-
-export type MigrationResponse = { report: MigrationReport, };
-
-export type MigrationReport = { projects: EntityReport, tasks: EntityReport, pr_merges: EntityReport, workspaces: EntityReport, warnings: Array<string>, };
-
-export type EntityReport = { total: number, migrated: number, failed: number, skipped: number, errors: Array<EntityError>, };
-
-export type EntityError = { local_id: string, error: string, };
-
 export type RegisterRepoRequest = { path: string, display_name: string | null, };
 
 export type InitRepoRequest = { parent_path: string, folder_name: string, };
 
 export type TagSearchParams = { search: string | null, };
-
-export type TokenResponse = { access_token: string, expires_at: string | null, };
 
 export type UserSystemInfo = { config: Config, analytics_user_id: string, login_status: LoginStatus, environment: Environment, 
 /**
@@ -275,8 +265,6 @@ export type CheckEditorAvailabilityQuery = { editor_type: EditorType, };
 export type CheckEditorAvailabilityResponse = { available: boolean, };
 
 export type CheckAgentAvailabilityQuery = { executor: BaseCodingAgent, };
-
-export type CurrentUserResponse = { user_id: string, };
 
 export type CreateFollowUpAttempt = { prompt: string, executor_profile_id: ExecutorProfileId, retry_process_id: string | null, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
 
@@ -315,6 +303,12 @@ export type ImageMetadata = { exists: boolean, file_name: string | null, path: s
 export type CreateTaskAttemptBody = { task_id: string, executor_profile_id: ExecutorProfileId, repos: Array<WorkspaceRepoInput>, };
 
 export type WorkspaceRepoInput = { repo_id: string, target_branch: string, };
+
+export type ChildTaskWithDeps = { dependencies: Array<string>, is_ready: boolean, sprint_workspace_id: string | null, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, created_at: string, updated_at: string, };
+
+export type SprintRepoInput = { repo_id: string, target_branch: string, };
+
+export type StartSprintRequest = { task_ids: Array<string>, executor_profile_id: ExecutorProfileId | null, repos: Array<SprintRepoInput>, };
 
 export type RunAgentSetupRequest = { executor_profile_id: ExecutorProfileId, };
 
@@ -503,9 +497,9 @@ working_dir: string | null, };
 
 export type ScriptRequestLanguage = "Bash";
 
-export enum BaseCodingAgent { CLAUDE_CODE = "CLAUDE_CODE", AMP = "AMP", GEMINI = "GEMINI", CODEX = "CODEX", OPENCODE = "OPENCODE", CURSOR_AGENT = "CURSOR_AGENT", QWEN_CODE = "QWEN_CODE", COPILOT = "COPILOT", DROID = "DROID" }
+export enum BaseCodingAgent { CLAUDE_CODE = "CLAUDE_CODE", GEMINI = "GEMINI", CODEX = "CODEX" }
 
-export type CodingAgent = { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "COPILOT": Copilot } | { "DROID": Droid };
+export type CodingAgent = { "CLAUDE_CODE": ClaudeCode } | { "GEMINI": Gemini } | { "CODEX": Codex };
 
 export type SlashCommandDescription = { 
 /**
@@ -535,7 +529,7 @@ executor: BaseCodingAgent,
  */
 variant: string | null, };
 
-export type ExecutorConfig = { [key in string]?: { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "COPILOT": Copilot } | { "DROID": Droid } };
+export type ExecutorConfig = { [key in string]?: { "CLAUDE_CODE": ClaudeCode } | { "GEMINI": Gemini } | { "CODEX": Codex } };
 
 export type ExecutorConfigs = { executors: { [key in BaseCodingAgent]?: ExecutorConfig }, };
 
@@ -544,8 +538,6 @@ export enum BaseAgentCapability { SESSION_FORK = "SESSION_FORK", SETUP_HELPER = 
 export type ClaudeCode = { append_prompt: AppendPrompt, claude_code_router?: boolean | null, plan?: boolean | null, approvals?: boolean | null, model?: string | null, dangerously_skip_permissions?: boolean | null, disable_api_key?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type Gemini = { append_prompt: AppendPrompt, model?: string | null, yolo?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type Amp = { append_prompt: AppendPrompt, dangerously_allow_all?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type Codex = { append_prompt: AppendPrompt, sandbox?: SandboxMode | null, ask_for_approval?: AskForApproval | null, oss?: boolean | null, model?: string | null, model_reasoning_effort?: ReasoningEffort | null, model_reasoning_summary?: ReasoningSummary | null, model_reasoning_summary_format?: ReasoningSummaryFormat | null, profile?: string | null, base_instructions?: string | null, include_apply_patch_tool?: boolean | null, model_provider?: string | null, compact_prompt?: string | null, developer_instructions?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
@@ -558,28 +550,6 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export type ReasoningSummary = "auto" | "concise" | "detailed" | "none";
 
 export type ReasoningSummaryFormat = "none" | "experimental";
-
-export type CursorAgent = { append_prompt: AppendPrompt, force?: boolean | null, model?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type Copilot = { append_prompt: AppendPrompt, model?: string | null, allow_all_tools?: boolean | null, allow_tool?: string | null, deny_tool?: string | null, add_dir?: Array<string> | null, disable_mcp_server?: Array<string> | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type Opencode = { append_prompt: AppendPrompt, model?: string | null, variant?: string | null, agent?: string | null, 
-/**
- * Auto-approve agent actions
- */
-auto_approve: boolean, 
-/**
- * Enable auto-compaction when the context length approaches the model's context window limit
- */
-auto_compact: boolean, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type QwenCode = { append_prompt: AppendPrompt, yolo?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type Droid = { append_prompt: AppendPrompt, autonomy: Autonomy, model?: string | null, reasoning_effort?: DroidReasoningEffort | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
-
-export type Autonomy = "normal" | "low" | "medium" | "high" | "skip-permissions-unsafe";
-
-export type DroidReasoningEffort = "none" | "dynamic" | "off" | "low" | "medium" | "high";
 
 export type AppendPrompt = string | null;
 
@@ -659,6 +629,6 @@ export type PatchType = { "type": "NORMALIZED_ENTRY", "content": NormalizedEntry
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]?: JsonValue } | null;
 
-export const DEFAULT_PR_DESCRIPTION_PROMPT = "Update the PR that was just created with a better title and description.\nThe PR number is #{pr_number} and the URL is {pr_url}.\n\nAnalyze the changes in this branch and write:\n1. A concise, descriptive title that summarizes the changes, postfixed with \"(Vibe Kanban)\"\n2. A detailed description that explains:\n   - What changes were made\n   - Why they were made (based on the task context)\n   - Any important implementation details\n   - At the end, include a note: \"This PR was written using [Vibe Kanban](https://vibekanban.com)\"\n\nUse the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps).";
+export const DEFAULT_PR_DESCRIPTION_PROMPT = "Update the PR that was just created with a better title and description.\nThe PR number is #{pr_number} and the URL is {pr_url}.\n\nAnalyze the changes in this branch and write:\n1. A concise, descriptive title that summarizes the changes, postfixed with \"(Wicke Kanban)\"\n2. A detailed description that explains:\n   - What changes were made\n   - Why they were made (based on the task context)\n   - Any important implementation details\n\nUse the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps).";
 
 export const DEFAULT_COMMIT_REMINDER_PROMPT = "There are uncommitted changes. Please stage and commit them now with a descriptive commit message.";

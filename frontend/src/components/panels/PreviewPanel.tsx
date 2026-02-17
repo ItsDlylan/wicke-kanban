@@ -248,13 +248,9 @@ export function PreviewPanel() {
                   </li>
                   <li>
                     {t('preview.troubleAlert.item3')}{' '}
-                    <a
-                      href="https://github.com/BloopAI/vibe-kanban-web-companion"
-                      target="_blank"
-                      className="underline font-bold"
-                    >
+                    <span className="font-bold">
                       {t('preview.troubleAlert.item3Link')}
-                    </a>
+                    </span>
                     .
                   </li>
                 </ol>

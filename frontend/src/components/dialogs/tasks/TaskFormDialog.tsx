@@ -188,7 +188,9 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         status: null,
         parent_workspace_id:
           mode === 'subtask' ? props.parentTaskAttemptId : null,
+        parent_task_id: null,
         image_ids: imageIds,
+        sort_order: null,
         shared_task_id: null,
       };
       const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
@@ -476,11 +478,20 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="backlog">
+                        {t('taskFormDialog.statusOptions.backlog', 'Backlog')}
+                      </SelectItem>
                       <SelectItem value="todo">
                         {t('taskFormDialog.statusOptions.todo')}
                       </SelectItem>
-                      <SelectItem value="inprogress">
-                        {t('taskFormDialog.statusOptions.inprogress')}
+                      <SelectItem value="spec">
+                        {t('taskFormDialog.statusOptions.spec', 'Spec')}
+                      </SelectItem>
+                      <SelectItem value="plan">
+                        {t('taskFormDialog.statusOptions.plan', 'Plan')}
+                      </SelectItem>
+                      <SelectItem value="ralph">
+                        {t('taskFormDialog.statusOptions.ralph', 'Ralph')}
                       </SelectItem>
                       <SelectItem value="inreview">
                         {t('taskFormDialog.statusOptions.inreview')}

@@ -36,8 +36,11 @@ export const useProjectTasks = (projectId: string): UseProjectTasksResult => {
   const { tasks, tasksById, tasksByStatus } = useMemo(() => {
     const merged: Record<string, TaskWithAttemptStatus> = { ...localTasksById };
     const byStatus: Record<TaskStatus, TaskWithAttemptStatus[]> = {
+      backlog: [],
       todo: [],
-      inprogress: [],
+      spec: [],
+      plan: [],
+      ralph: [],
       inreview: [],
       done: [],
       cancelled: [],

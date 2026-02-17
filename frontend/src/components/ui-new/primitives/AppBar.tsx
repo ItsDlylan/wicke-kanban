@@ -3,14 +3,11 @@ import {
   PlusIcon,
   KanbanIcon,
   SpinnerIcon,
-  StarIcon,
 } from '@phosphor-icons/react';
-import { siDiscord, siGithub } from 'simple-icons';
 import { cn } from '@/lib/utils';
 import type { OrganizationWithRole } from 'shared/types';
 import type { Project as RemoteProject } from 'shared/remote-types';
 import { AppBarButton } from './AppBarButton';
-import { AppBarSocialLink } from './AppBarSocialLink';
 import { AppBarUserPopoverContainer } from '../containers/AppBarUserPopoverContainer';
 import {
   Popover,
@@ -19,15 +16,7 @@ import {
   PopoverClose,
 } from './Popover';
 import { Tooltip } from './Tooltip';
-import { useDiscordOnlineCount } from '@/hooks/useDiscordOnlineCount';
-import { useGitHubStars } from '@/hooks/useGitHubStars';
 import { useTranslation } from 'react-i18next';
-
-function formatStarCount(count: number): string {
-  if (count < 1000) return String(count);
-  const k = count / 1000;
-  return k >= 10 ? `${Math.floor(k)}k` : `${k.toFixed(1)}k`;
-}
 
 function getProjectInitials(name: string): string {
   const trimmed = name.trim();
@@ -74,8 +63,6 @@ export function AppBar({
   onMigrate,
 }: AppBarProps) {
   const { t } = useTranslation('common');
-  const { data: onlineCount } = useDiscordOnlineCount();
-  const { data: starCount } = useGitHubStars();
 
   return (
     <div
@@ -205,34 +192,13 @@ export function AppBar({
         </Tooltip>
       )}
 
-      {/* Bottom section: User popover + GitHub + Discord */}
+      {/* Bottom section: User popover */}
       <div className="mt-auto pt-base flex flex-col items-center gap-4">
         <AppBarUserPopoverContainer
           organizations={organizations}
           selectedOrgId={selectedOrgId}
           onOrgSelect={onOrgSelect}
           onCreateOrg={onCreateOrg}
-        />
-        <AppBarSocialLink
-          href="https://github.com/BloopAI/vibe-kanban"
-          label="Star on GitHub"
-          iconPath={siGithub.path}
-          badge={
-            starCount != null && (
-              <>
-                <StarIcon size={10} weight="fill" />
-                {formatStarCount(starCount)}
-              </>
-            )
-          }
-        />
-        <AppBarSocialLink
-          href="https://discord.gg/AC4nwVtJM3"
-          label="Join our Discord"
-          iconPath={siDiscord.path}
-          badge={
-            onlineCount != null && (onlineCount > 999 ? '999+' : onlineCount)
-          }
         />
       </div>
     </div>

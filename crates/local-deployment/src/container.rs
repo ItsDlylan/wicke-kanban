@@ -17,6 +17,8 @@ use db::{
             ExecutionContext, ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus,
         },
         execution_process_repo_state::ExecutionProcessRepoState,
+        project::Project,
+        project_repo::ProjectRepo,
         repo::Repo,
         scratch::{DraftFollowUpData, Scratch, ScratchType},
         session::{Session, SessionError},
@@ -49,8 +51,6 @@ use services::services::{
     image::ImageService,
     notification::NotificationService,
     queued_message::QueuedMessageService,
-    remote_client::RemoteClient,
-    remote_sync,
     workspace_manager::{RepoWorkspaceInput, WorkspaceManager},
 };
 use tokio::{sync::RwLock, task::JoinHandle};
@@ -84,7 +84,6 @@ pub struct LocalContainerService {
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
     notification_service: NotificationService,
-    remote_client: Option<RemoteClient>,
 }
 
 impl LocalContainerService {
@@ -98,7 +97,6 @@ impl LocalContainerService {
         analytics: Option<AnalyticsContext>,
         approvals: Approvals,
         queued_message_service: QueuedMessageService,
-        remote_client: Option<RemoteClient>,
     ) -> Self {
         let child_store = Arc::new(RwLock::new(HashMap::new()));
         let cancellation_tokens = Arc::new(RwLock::new(HashMap::new()));
@@ -122,7 +120,6 @@ impl LocalContainerService {
             approvals,
             queued_message_service,
             notification_service,
-            remote_client,
         };
 
         container.spawn_workspace_cleanup();
@@ -610,39 +607,6 @@ impl LocalContainerService {
                         "exit_code": ctx.execution_process.exit_code,
                     })));
                 }
-
-                // Sync workspace to remote after CodingAgent execution
-                if matches!(
-                    &ctx.execution_process.run_reason,
-                    ExecutionProcessRunReason::CodingAgent
-                ) && let Some(client) = &container.remote_client
-                {
-                    let stats = diff_stream::compute_diff_stats(
-                        &container.db.pool,
-                        &container.git,
-                        &ctx.workspace,
-                    )
-                    .await;
-                    let workspace_name =
-                        Workspace::find_by_id_with_status(&container.db.pool, ctx.workspace.id)
-                            .await
-                            .ok()
-                            .flatten()
-                            .and_then(|ws| ws.workspace.name);
-                    let client = client.clone();
-                    let workspace_id = ctx.workspace.id;
-                    let archived = ctx.workspace.archived;
-                    tokio::spawn(async move {
-                        remote_sync::sync_workspace_to_remote(
-                            &client,
-                            workspace_id,
-                            workspace_name.map(Some),
-                            Some(archived),
-                            stats.as_ref(),
-                        )
-                        .await;
-                    });
-                }
             }
 
             // Now that commit/next-action/finalization steps for this process are complete,
@@ -1042,6 +1006,23 @@ impl ContainerService for LocalContainerService {
     }
 
     async fn create(&self, workspace: &Workspace) -> Result<ContainerRef, ContainerError> {
+        // If container_ref is already set (e.g. shared Ralph workspace),
+        // just verify it exists and return it.
+        if let Some(ref container_ref) = workspace.container_ref {
+            let workspace_dir = PathBuf::from(container_ref);
+            let repositories =
+                WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id).await?;
+            if !repositories.is_empty() {
+                WorkspaceManager::ensure_workspace_exists(
+                    &workspace_dir,
+                    &repositories,
+                    &workspace.branch,
+                )
+                .await?;
+            }
+            return Ok(container_ref.clone());
+        }
+
         let task = workspace
             .parent_task(&self.db.pool)
             .await?
@@ -1049,7 +1030,17 @@ impl ContainerService for LocalContainerService {
 
         let workspace_dir_name =
             LocalContainerService::dir_name_from_workspace(&workspace.id, &task.title);
-        let workspace_dir = WorkspaceManager::get_workspace_base_dir().join(&workspace_dir_name);
+
+        let project = Project::find_by_id(&self.db.pool, task.project_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+        let repos = ProjectRepo::find_repos_for_project(&self.db.pool, task.project_id).await?;
+        let primary_repo = repos.first().ok_or_else(|| {
+            ContainerError::Other(anyhow!("Project has no repositories configured"))
+        })?;
+        let workspace_dir =
+            WorkspaceManager::get_project_workspace_base_dir(&project.name, &primary_repo.path)
+                .join(&workspace_dir_name);
 
         let workspace_repos =
             WorkspaceRepo::find_by_workspace_id(&self.db.pool, workspace.id).await?;
@@ -1131,7 +1122,17 @@ impl ContainerService for LocalContainerService {
                 .ok_or(sqlx::Error::RowNotFound)?;
             let workspace_dir_name =
                 LocalContainerService::dir_name_from_workspace(&workspace.id, &task.title);
-            WorkspaceManager::get_workspace_base_dir().join(&workspace_dir_name)
+
+            let project = Project::find_by_id(&self.db.pool, task.project_id)
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?;
+            let project_repos =
+                ProjectRepo::find_repos_for_project(&self.db.pool, task.project_id).await?;
+            let primary_repo = project_repos.first().ok_or_else(|| {
+                ContainerError::Other(anyhow!("Project has no repositories configured"))
+            })?;
+            WorkspaceManager::get_project_workspace_base_dir(&project.name, &primary_repo.path)
+                .join(&workspace_dir_name)
         };
 
         WorkspaceManager::ensure_workspace_exists(&workspace_dir, &repositories, &workspace.branch)
@@ -1196,11 +1197,7 @@ impl ContainerService for LocalContainerService {
         let approvals_service: Arc<dyn ExecutorApprovalService> =
             match executor_action.base_executor() {
                 Some(
-                    BaseCodingAgent::Codex
-                    | BaseCodingAgent::ClaudeCode
-                    | BaseCodingAgent::Gemini
-                    | BaseCodingAgent::QwenCode
-                    | BaseCodingAgent::Opencode,
+                    BaseCodingAgent::Codex | BaseCodingAgent::ClaudeCode | BaseCodingAgent::Gemini,
                 ) => ExecutorApprovalBridge::new(
                     self.approvals.clone(),
                     self.db.clone(),

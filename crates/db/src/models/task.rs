@@ -15,8 +15,11 @@ use super::{project::Project, workspace::Workspace};
 #[strum(serialize_all = "lowercase")]
 pub enum TaskStatus {
     #[default]
+    Backlog,
     Todo,
-    InProgress,
+    Spec,
+    Plan,
+    Ralph,
     InReview,
     Done,
     Cancelled,
@@ -29,7 +32,9 @@ pub struct Task {
     pub title: String,
     pub description: Option<String>,
     pub status: TaskStatus,
-    pub parent_workspace_id: Option<Uuid>, // Foreign key to parent Workspace
+    pub parent_workspace_id: Option<Uuid>, // Foreign key to parent Workspace (sprint execution)
+    pub parent_task_id: Option<Uuid>,      // Foreign key to parent Task (decomposition)
+    pub sort_order: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -71,7 +76,9 @@ pub struct CreateTask {
     pub description: Option<String>,
     pub status: Option<TaskStatus>,
     pub parent_workspace_id: Option<Uuid>,
+    pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
+    pub sort_order: Option<i32>,
 }
 
 impl CreateTask {
@@ -84,9 +91,11 @@ impl CreateTask {
             project_id,
             title,
             description,
-            status: Some(TaskStatus::Todo),
+            status: Some(TaskStatus::Backlog),
             parent_workspace_id: None,
+            parent_task_id: None,
             image_ids: None,
+            sort_order: None,
         }
     }
 }
@@ -125,8 +134,10 @@ impl Task {
   t.description,
   t.status                        AS "status!: TaskStatus",
   t.parent_workspace_id           AS "parent_workspace_id: Uuid",
+  t.parent_task_id                AS "parent_task_id: Uuid",
   t.created_at                    AS "created_at!: DateTime<Utc>",
   t.updated_at                    AS "updated_at!: DateTime<Utc>",
+  t.sort_order                    AS "sort_order!: i32",
 
   CASE WHEN EXISTS (
     SELECT 1
@@ -177,6 +188,8 @@ ORDER BY t.created_at DESC"#,
                     description: rec.description,
                     status: rec.status,
                     parent_workspace_id: rec.parent_workspace_id,
+                    parent_task_id: rec.parent_task_id,
+                    sort_order: rec.sort_order,
                     created_at: rec.created_at,
                     updated_at: rec.updated_at,
                 },
@@ -192,7 +205,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                ORDER BY created_at ASC"#
         )
@@ -203,7 +216,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE id = $1"#,
             id
@@ -215,7 +228,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -230,17 +243,20 @@ ORDER BY t.created_at DESC"#,
         task_id: Uuid,
     ) -> Result<Self, sqlx::Error> {
         let status = data.status.clone().unwrap_or_default();
+        let sort_order = data.sort_order.unwrap_or(0);
         sqlx::query_as!(
             Task,
-            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, parent_task_id, sort_order)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             task_id,
             data.project_id,
             data.title,
             data.description,
             status,
-            data.parent_workspace_id
+            data.parent_workspace_id,
+            data.parent_task_id,
+            sort_order
         )
         .fetch_one(pool)
         .await
@@ -260,7 +276,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET title = $3, description = $4, status = $5, parent_workspace_id = $6
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             project_id,
             title,
@@ -338,7 +354,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,
@@ -380,5 +396,102 @@ ORDER BY t.created_at DESC"#,
             current_workspace: workspace.clone(),
             children,
         })
+    }
+
+    /// Find next eligible child task for Ralph loop execution.
+    /// Returns the first child (by sort_order) that is in Todo status
+    /// and has all its dependencies in Done status.
+    pub async fn find_next_eligible_child(
+        pool: &SqlitePool,
+        parent_workspace_id: Uuid,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            Task,
+            r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
+               FROM tasks t
+               WHERE t.parent_workspace_id = $1
+                 AND t.status = 'todo'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM task_dependencies td
+                     JOIN tasks dep ON dep.id = td.depends_on
+                     WHERE td.task_id = t.id AND dep.status != 'done'
+                 )
+               ORDER BY t.sort_order ASC
+               LIMIT 1"#,
+            parent_workspace_id
+        )
+        .fetch_optional(pool)
+        .await
+    }
+
+    /// Check if all children of a parent workspace are done.
+    pub async fn all_children_done(
+        pool: &SqlitePool,
+        parent_workspace_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT COUNT(*) as "total!: i64",
+                      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as "done!: i64"
+               FROM tasks
+               WHERE parent_workspace_id = $1"#,
+            parent_workspace_id
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result.total > 0 && result.total == result.done)
+    }
+
+    /// Find all child tasks of a parent task (decomposition children), ordered by sort_order.
+    pub async fn find_by_parent_task_id(
+        pool: &SqlitePool,
+        parent_task_id: Uuid,
+    ) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            Task,
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+               FROM tasks
+               WHERE parent_task_id = $1
+               ORDER BY sort_order ASC"#,
+            parent_task_id
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Check if ALL children of a parent task (across all sprints) are done.
+    pub async fn all_parent_children_done(
+        pool: &SqlitePool,
+        parent_task_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT COUNT(*) as "total!: i64",
+                      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as "done!: i64"
+               FROM tasks
+               WHERE parent_task_id = $1"#,
+            parent_task_id
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result.total > 0 && result.total == result.done)
+    }
+
+    /// Count children tasks and how many are done.
+    pub async fn count_children(
+        pool: &SqlitePool,
+        parent_workspace_id: Uuid,
+    ) -> Result<(i64, i64), sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT COUNT(*) as "total!: i64",
+                      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as "done!: i64"
+               FROM tasks
+               WHERE parent_workspace_id = $1"#,
+            parent_workspace_id
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok((result.done, result.total))
     }
 }

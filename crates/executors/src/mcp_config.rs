@@ -264,19 +264,6 @@ fn adapt_gemini(servers: ServerMap, meta: Option<Value>) -> Value {
     attach_meta(servers, meta)
 }
 
-fn adapt_cursor(servers: ServerMap, meta: Option<Value>) -> Value {
-    let servers = transform_http_servers(servers, |mut s| {
-        let url = s
-            .remove("url")
-            .unwrap_or_else(|| Value::String(String::new()));
-        let headers = s
-            .remove("headers")
-            .unwrap_or_else(|| Value::Object(Default::default()));
-        Map::from_iter([("url".to_string(), url), ("headers".to_string(), headers)])
-    });
-    attach_meta(servers, meta)
-}
-
 fn adapt_codex(mut servers: ServerMap, mut meta: Option<Value>) -> Value {
     servers.retain(|_, v| v.as_object().map(is_stdio).unwrap_or(false));
 
@@ -288,92 +275,10 @@ fn adapt_codex(mut servers: ServerMap, mut meta: Option<Value>) -> Value {
     attach_meta(servers, meta)
 }
 
-fn adapt_opencode(servers: ServerMap, meta: Option<Value>) -> Value {
-    let mut servers = transform_http_servers(servers, |mut s| {
-        let url = s
-            .remove("url")
-            .unwrap_or_else(|| Value::String(String::new()));
-
-        let mut headers = s
-            .remove("headers")
-            .and_then(|v| v.as_object().cloned())
-            .unwrap_or_default();
-
-        ensure_header(
-            &mut headers,
-            "Accept",
-            "application/json, text/event-stream",
-        );
-
-        Map::from_iter([
-            ("type".to_string(), Value::String("remote".to_string())),
-            ("url".to_string(), url),
-            ("headers".to_string(), Value::Object(headers)),
-            ("enabled".to_string(), Value::Bool(true)),
-        ])
-    });
-
-    for (_k, v) in servers.iter_mut() {
-        if let Value::Object(s) = v
-            && is_stdio(s)
-        {
-            let command_str = s
-                .remove("command")
-                .and_then(|v| match v {
-                    Value::String(s) => Some(s),
-                    _ => None,
-                })
-                .unwrap_or_default();
-
-            let mut cmd_vec: Vec<Value> = Vec::new();
-            if !command_str.is_empty() {
-                cmd_vec.push(Value::String(command_str));
-            }
-
-            if let Some(arr) = s.remove("args").and_then(|v| match v {
-                Value::Array(arr) => Some(arr),
-                _ => None,
-            }) {
-                for a in arr {
-                    match a {
-                        Value::String(s) => cmd_vec.push(Value::String(s)),
-                        other => cmd_vec.push(other), // fall back to raw value if not string
-                    }
-                }
-            }
-
-            let mut new_map = Map::new();
-            new_map.insert("type".to_string(), Value::String("local".to_string()));
-            new_map.insert("command".to_string(), Value::Array(cmd_vec));
-            new_map.insert("enabled".to_string(), Value::Bool(true));
-            *s = new_map;
-        }
-    }
-
-    attach_meta(servers, meta)
-}
-
-fn adapt_copilot(mut servers: ServerMap, meta: Option<Value>) -> Value {
-    for (_, value) in servers.iter_mut() {
-        if let Value::Object(s) = value
-            && !s.contains_key("tools")
-        {
-            s.insert(
-                "tools".to_string(),
-                Value::Array(vec![Value::String("*".to_string())]),
-            );
-        }
-    }
-    attach_meta(servers, meta)
-}
-
 enum Adapter {
     Passthrough,
     Gemini,
-    Cursor,
     Codex,
-    Opencode,
-    Copilot,
 }
 
 fn apply_adapter(adapter: Adapter, canonical: Value) -> Value {
@@ -385,10 +290,7 @@ fn apply_adapter(adapter: Adapter, canonical: Value) -> Value {
     match adapter {
         Adapter::Passthrough => adapt_passthrough(servers_only, meta),
         Adapter::Gemini => adapt_gemini(servers_only, meta),
-        Adapter::Cursor => adapt_cursor(servers_only, meta),
         Adapter::Codex => adapt_codex(servers_only, meta),
-        Adapter::Opencode => adapt_opencode(servers_only, meta),
-        Adapter::Copilot => adapt_copilot(servers_only, meta),
     }
 }
 
@@ -397,14 +299,11 @@ impl CodingAgent {
         use Adapter::*;
 
         let adapter = match self {
-            CodingAgent::ClaudeCode(_) | CodingAgent::Amp(_) | CodingAgent::Droid(_) => Passthrough,
-            CodingAgent::QwenCode(_) | CodingAgent::Gemini(_) => Gemini,
-            CodingAgent::CursorAgent(_) => Cursor,
+            CodingAgent::ClaudeCode(_) => Passthrough,
+            CodingAgent::Gemini(_) => Gemini,
             CodingAgent::Codex(_) => Codex,
-            CodingAgent::Opencode(_) => Opencode,
-            CodingAgent::Copilot(..) => Copilot,
             #[cfg(feature = "qa-mode")]
-            CodingAgent::QaMock(_) => Passthrough, // QA mock doesn't need MCP
+            CodingAgent::QaMock(_) => Passthrough,
         };
 
         let canonical = PRECONFIGURED_MCP_SERVERS.clone();

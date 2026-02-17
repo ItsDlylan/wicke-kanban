@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO spec_sheets (id, task_id, overview, requirements, acceptance_criteria, constraints, tech_notes)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)\n               RETURNING id as \"id!: Uuid\", task_id as \"task_id!: Uuid\", overview, requirements, acceptance_criteria, constraints, tech_notes, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "overview",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "requirements",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "acceptance_criteria",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "constraints",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "tech_notes",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3a6ccf6132e2a7d95bac4f81a9dfe109ffa8428138272788ab5fde78547d0cb1"
+}

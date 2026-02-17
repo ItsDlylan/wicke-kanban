@@ -97,6 +97,9 @@ import {
   CreateFromPrError,
   MigrationRequest,
   MigrationResponse,
+  SpecSheet,
+  CreateSpecSheet,
+  ChildTaskWithDeps,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -370,6 +373,91 @@ export const tasksApi = {
       method: 'DELETE',
     });
     return handleApiResponse<void>(response);
+  },
+};
+
+export const specSheetsApi = {
+  get: async (taskId: string): Promise<SpecSheet | null> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/spec`);
+    return handleApiResponse<SpecSheet | null>(response);
+  },
+
+  createOrUpdate: async (
+    taskId: string,
+    data: CreateSpecSheet
+  ): Promise<SpecSheet> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/spec`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<SpecSheet>(response);
+  },
+
+  delete: async (taskId: string): Promise<void> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/spec`, {
+      method: 'DELETE',
+    });
+    return handleApiResponse<void>(response);
+  },
+};
+
+export const planApi = {
+  generate: async (taskId: string): Promise<string> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/plan`, {
+      method: 'POST',
+    });
+    return handleApiResponse<string>(response);
+  },
+};
+
+export const ralphApi = {
+  start: async (taskId: string): Promise<string> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/ralph/start`, {
+      method: 'POST',
+    });
+    return handleApiResponse<string>(response);
+  },
+
+  complete: async (taskId: string): Promise<void> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/ralph/complete`, {
+      method: 'POST',
+    });
+    return handleApiResponse<void>(response);
+  },
+};
+
+export const decomposeApi = {
+  // Decompose only — no execution
+  decompose: async (taskId: string): Promise<Task[]> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/decompose`, {
+      method: 'POST',
+    });
+    return handleApiResponse<Task[]>(response);
+  },
+
+  // Get children with deps for sprint planning
+  getChildren: async (taskId: string): Promise<ChildTaskWithDeps[]> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/children`);
+    return handleApiResponse<ChildTaskWithDeps[]>(response);
+  },
+
+  // Start a sprint with selected tasks
+  startSprint: async (
+    taskId: string,
+    body: {
+      task_ids: string[];
+      executor_profile_id?: ExecutorProfileId;
+      repos: { repo_id: string; target_branch: string }[];
+    }
+  ): Promise<string> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/ralph/start-sprint`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }
+    );
+    return handleApiResponse<string>(response);
   },
 };
 

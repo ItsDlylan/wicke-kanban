@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT depends_on as \"depends_on!: Uuid\" FROM task_dependencies WHERE task_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "depends_on!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "92778578f68ffea8014aa19c26cc2124e3d1116fe7b1e059e07c712e1d4e5396"
+}

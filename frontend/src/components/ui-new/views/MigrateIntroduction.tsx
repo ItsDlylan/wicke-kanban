@@ -19,20 +19,7 @@ const features = [
   {
     icon: CloudIcon,
     title: 'Cloud Storage',
-    description: (
-      <>
-        Access your projects from anywhere.{' '}
-        <a
-          href="https://www.vibekanban.com/docs/self-hosting/local-development"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-brand hover:underline"
-        >
-          Self-host
-        </a>{' '}
-        if you prefer.
-      </>
-    ),
+    description: 'Access your projects from anywhere.',
   },
   {
     icon: UsersIcon,

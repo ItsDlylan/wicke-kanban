@@ -1,9 +1,9 @@
 <p align="center">
   <a href="https://vibekanban.com">
     <picture>
-      <source srcset="frontend/public/vibe-kanban-logo-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="frontend/public/vibe-kanban-logo.svg" media="(prefers-color-scheme: light)">
-      <img src="frontend/public/vibe-kanban-logo.svg" alt="Vibe Kanban Logo">
+      <source srcset="frontend/public/wicke-kanban-logo-dark.svg" media="(prefers-color-scheme: dark)">
+      <source srcset="frontend/public/wicke-kanban-logo.svg" media="(prefers-color-scheme: light)">
+      <img src="frontend/public/wicke-kanban-logo.svg" alt="Wicke Kanban Logo">
     </picture>
   </a>
 </p>
@@ -19,18 +19,18 @@
   <a href="https://jobs.polymer.co/vibe-kanban?source=github"><strong>We're hiring!</strong></a>
 </h1>
 
-![](frontend/public/vibe-kanban-screenshot-overview.png)
+![](frontend/public/wicke-kanban-screenshot-overview.png)
 
 ## Overview
 
-AI coding agents are increasingly writing the world's code and human engineers now spend the majority of their time planning, reviewing, and orchestrating tasks. Vibe Kanban streamlines this process, enabling you to:
+AI coding agents are increasingly writing the world's code and human engineers now spend the majority of their time planning, reviewing, and orchestrating tasks. Wicke Kanban streamlines this process, enabling you to:
 
 - Easily switch between different coding agents
 - Orchestrate the execution of multiple coding agents in parallel or in sequence
 - Quickly review work and start dev servers
 - Track the status of tasks that your coding agents are working on
 - Centralise configuration of coding agent MCP configs
-- Open projects remotely via SSH when running Vibe Kanban on a remote server
+- Open projects remotely via SSH when running Wicke Kanban on a remote server
 
 You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
 
@@ -39,7 +39,7 @@ You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
 Make sure you have authenticated with your favourite coding agent. A full list of supported coding agents can be found in the [docs](https://vibekanban.com/docs). Then in your terminal run:
 
 ```bash
-npx vibe-kanban
+npx wicke-kanban
 ```
 
 ## Documentation
@@ -48,7 +48,7 @@ Please head to the [website](https://vibekanban.com/docs) for the latest documen
 
 ## Self-Hosting
 
-Want to host your own Vibe Kanban Cloud instance? See our [self-hosting guide](https://vibekanban.com/docs/self-hosting).
+Want to host your own Wicke Kanban Cloud instance? See our [self-hosting guide](https://vibekanban.com/docs/self-hosting).
   
 ## Support
 
@@ -120,7 +120,7 @@ The following environment variables can be configured at build time or runtime:
 
 #### Self-Hosting with a Reverse Proxy or Custom Domain
 
-When running Vibe Kanban behind a reverse proxy (e.g., nginx, Caddy, Traefik) or on a custom domain, you must set the `VK_ALLOWED_ORIGINS` environment variable. Without this, the browser's Origin header won't match the backend's expected host, and API requests will be rejected with a 403 Forbidden error.
+When running Wicke Kanban behind a reverse proxy (e.g., nginx, Caddy, Traefik) or on a custom domain, you must set the `VK_ALLOWED_ORIGINS` environment variable. Without this, the browser's Origin header won't match the backend's expected host, and API requests will be rejected with a 403 Forbidden error.
 
 Set it to the full origin URL(s) where your frontend is accessible:
 
@@ -134,7 +134,7 @@ VK_ALLOWED_ORIGINS=https://vk.example.com,https://vk-staging.example.com
 
 ### Remote Deployment
 
-When running Vibe Kanban on a remote server (e.g., via systemctl, Docker, or cloud hosting), you can configure your editor to open projects via SSH:
+When running Wicke Kanban on a remote server (e.g., via systemctl, Docker, or cloud hosting), you can configure your editor to open projects via SSH:
 
 1. **Access via tunnel**: Use Cloudflare Tunnel, ngrok, or similar to expose the web UI
 2. **Configure remote SSH** in Settings → Editor Integration:

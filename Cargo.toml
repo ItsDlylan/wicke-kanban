@@ -10,7 +10,6 @@ members = [
     "crates/git",
     "crates/local-deployment",
     "crates/deployment",
-    "crates/review",
 ]
 exclude = ["crates/remote"]
 

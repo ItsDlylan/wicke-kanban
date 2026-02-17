@@ -227,11 +227,113 @@ pub trait ContainerService {
         action.next_action.is_none()
     }
 
-    /// Finalize task execution by updating status to InReview and sending notifications
+    /// Finalize task execution by updating status to InReview and sending notifications.
+    /// For Ralph loop children, this advances the orchestration loop instead.
     async fn finalize_task(&self, ctx: &ExecutionContext) {
-        if let Err(e) =
-            Task::update_status(&self.db().pool, ctx.task.id, TaskStatus::InReview).await
-        {
+        let pool = &self.db().pool;
+
+        // Check if this is a Ralph loop child task
+        if let Some(parent_workspace_id) = ctx.task.parent_workspace_id {
+            if let Ok(Some(parent_workspace)) =
+                Workspace::find_by_id(pool, parent_workspace_id).await
+            {
+                if let Ok(Some(parent_task)) =
+                    Task::find_by_id(pool, parent_workspace.task_id).await
+                {
+                    if parent_task.status == TaskStatus::Ralph {
+                        // This is a Ralph loop child — advance the loop
+
+                        // If execution failed, stop the loop and mark parent as InReview
+                        if matches!(
+                            ctx.execution_process.status,
+                            ExecutionProcessStatus::Failed | ExecutionProcessStatus::Killed
+                        ) {
+                            tracing::warn!(
+                                "Ralph loop child {} failed, stopping loop for parent {}",
+                                ctx.task.id,
+                                parent_task.id
+                            );
+                            Task::update_status(pool, ctx.task.id, TaskStatus::InReview)
+                                .await
+                                .ok();
+                            Task::update_status(pool, parent_task.id, TaskStatus::InReview)
+                                .await
+                                .ok();
+                            self.notification_service()
+                                .notify(
+                                    &format!("Ralph Loop Failed: {}", parent_task.title),
+                                    &format!(
+                                        "❌ Child task '{}' failed. Loop stopped.",
+                                        ctx.task.title
+                                    ),
+                                )
+                                .await;
+                            return;
+                        }
+
+                        // Resolve executor profile from the session
+                        let executor_profile_id =
+                            match ExecutionProcess::latest_executor_profile_for_session(
+                                pool,
+                                ctx.session.id,
+                            )
+                            .await
+                            {
+                                Ok(Some(profile)) => profile,
+                                _ => {
+                                    tracing::warn!(
+                                        "Could not resolve executor profile for Ralph loop, using default"
+                                    );
+                                    executors::profile::ExecutorProfileId::new(
+                                        executors::executors::BaseCodingAgent::ClaudeCode,
+                                    )
+                                }
+                            };
+
+                        // Load workspace repos from the parent workspace
+                        let repos =
+                            match WorkspaceRepo::find_repos_with_target_branch_for_workspace(
+                                pool,
+                                parent_workspace_id,
+                            )
+                            .await
+                            {
+                                Ok(repos) => repos
+                                    .into_iter()
+                                    .map(|r| super::ralph_loop::WorkspaceRepoInput {
+                                        repo_id: r.repo.id,
+                                        target_branch: r.target_branch,
+                                    })
+                                    .collect::<Vec<_>>(),
+                                Err(e) => {
+                                    tracing::error!("Failed to load repos for Ralph loop: {e}");
+                                    return;
+                                }
+                            };
+
+                        if let Err(e) = super::ralph_loop::advance_ralph_loop(
+                            pool,
+                            self,
+                            &ctx.task,
+                            &executor_profile_id,
+                            &repos,
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to advance Ralph loop: {e}");
+                            // Fall through to normal finalization for the parent
+                            Task::update_status(pool, parent_task.id, TaskStatus::InReview)
+                                .await
+                                .ok();
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Default: set task to InReview + notify
+        if let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::InReview).await {
             tracing::error!("Failed to update task status to InReview: {e}");
         }
 
@@ -1272,15 +1374,13 @@ pub trait ContainerService {
         executor_action: &ExecutorAction,
         run_reason: &ExecutionProcessRunReason,
     ) -> Result<ExecutionProcess, ContainerError> {
-        // Update task status to InProgress when starting an execution
+        // Update task status to Ralph when starting an execution
         let task = workspace
             .parent_task(&self.db().pool)
             .await?
             .ok_or(SqlxError::RowNotFound)?;
-        if task.status != TaskStatus::InProgress
-            && run_reason != &ExecutionProcessRunReason::DevServer
-        {
-            Task::update_status(&self.db().pool, task.id, TaskStatus::InProgress).await?;
+        if task.status != TaskStatus::Ralph && run_reason != &ExecutionProcessRunReason::DevServer {
+            Task::update_status(&self.db().pool, task.id, TaskStatus::Ralph).await?;
         }
         // Create new execution process record
         // Capture current HEAD per repository as the "before" commit for this execution

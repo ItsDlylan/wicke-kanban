@@ -1,6 +1,5 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useCallback } from 'react';
-import { siDiscord } from 'simple-icons';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,17 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  FolderOpen,
-  Settings,
-  BookOpen,
-  MessageCircleQuestion,
-  MessageCircle,
-  Menu,
-  Plus,
-  LogOut,
-  LogIn,
-} from 'lucide-react';
+import { FolderOpen, Settings, Menu, Plus, LogOut, LogIn } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { SearchBar } from '@/components/SearchBar';
 import { useSearch } from '@/contexts/SearchContext';
@@ -28,7 +17,6 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useOpenProjectInEditor } from '@/hooks/useOpenProjectInEditor';
 import { OpenInIdeButton } from '@/components/ide/OpenInIdeButton';
 import { useProjectRepos } from '@/hooks';
-import { useDiscordOnlineCount } from '@/hooks/useDiscordOnlineCount';
 import { useTranslation } from 'react-i18next';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -45,23 +33,11 @@ const INTERNAL_NAV = [
   { label: 'Projects', icon: FolderOpen, to: '/local-projects' },
 ];
 
-const EXTERNAL_LINKS = [
-  {
-    label: 'Docs',
-    icon: BookOpen,
-    href: 'https://vibekanban.com/docs',
-  },
-  {
-    label: 'Support',
-    icon: MessageCircleQuestion,
-    href: 'https://github.com/BloopAI/vibe-kanban/issues',
-  },
-  {
-    label: 'Discord',
-    icon: MessageCircle,
-    href: 'https://discord.gg/AC4nwVtJM3',
-  },
-];
+const EXTERNAL_LINKS: {
+  label: string;
+  icon: typeof FolderOpen;
+  href: string;
+}[] = [];
 
 function NavDivider() {
   return (
@@ -79,7 +55,6 @@ export function Navbar() {
   const { projectId, project } = useProject();
   const { query, setQuery, active, clear, registerInputRef } = useSearch();
   const handleOpenInEditor = useOpenProjectInEditor(project || null);
-  const { data: onlineCount } = useDiscordOnlineCount();
   const { loginStatus, reloadSystem } = useUserSystem();
 
   const { data: repos } = useProjectRepos(projectId);
@@ -149,32 +124,6 @@ export function Navbar() {
             <Link to="/local-projects">
               <Logo />
             </Link>
-            <a
-              href="https://discord.gg/AC4nwVtJM3"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Join our Discord"
-              className="hidden sm:inline-flex items-center ml-3 text-xs font-medium overflow-hidden border h-6"
-            >
-              <span className="bg-muted text-foreground flex items-center p-2 border-r">
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d={siDiscord.path} />
-                </svg>
-              </span>
-              <span
-                className=" h-full items-center flex p-2"
-                aria-live="polite"
-              >
-                {onlineCount != null
-                  ? `${onlineCount.toLocaleString()} online`
-                  : 'online'}
-              </span>
-            </a>
           </div>
 
           <div className="hidden sm:flex items-center gap-2">

@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE spec_sheets\n               SET overview = $2, requirements = $3, acceptance_criteria = $4, constraints = $5, tech_notes = $6, updated_at = CURRENT_TIMESTAMP\n               WHERE task_id = $1\n               RETURNING id as \"id!: Uuid\", task_id as \"task_id!: Uuid\", overview, requirements, acceptance_criteria, constraints, tech_notes, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "overview",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "requirements",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "acceptance_criteria",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "constraints",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "tech_notes",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "0601c8724612549939e29292b1231abbee6610ee2a467fed5b2cc62d4275a63d"
+}

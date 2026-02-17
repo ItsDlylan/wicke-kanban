@@ -1,21 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  AlertTriangle,
-  Cloud,
-  ExternalLink,
-  Plus,
-  Sparkles,
-} from 'lucide-react';
+import { AlertTriangle, Plus } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { tasksApi } from '@/lib/api';
 import type { RepoBranchStatus, Workspace } from 'shared/types';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
-import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
+
 import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { usePostHog } from 'posthog-js/react';
@@ -72,15 +66,17 @@ import {
 } from '@/components/ui/breadcrumb';
 import { AttemptHeaderActions } from '@/components/panels/AttemptHeaderActions';
 import { TaskPanelHeaderActions } from '@/components/panels/TaskPanelHeaderActions';
-import { useSelectedOrgId } from '@/stores/useOrganizationStore';
 
 import type { TaskWithAttemptStatus, TaskStatus } from 'shared/types';
 
 type Task = TaskWithAttemptStatus;
 
 const TASK_STATUSES = [
+  'backlog',
   'todo',
-  'inprogress',
+  'spec',
+  'plan',
+  'ralph',
   'inreview',
   'done',
   'cancelled',
@@ -153,9 +149,6 @@ export function ProjectTasks() {
     isLoading: projectLoading,
     error: projectError,
   } = useProject();
-  const selectedOrgId = useSelectedOrgId();
-  const hasShownMigrationDialogRef = useRef(false);
-
   useEffect(() => {
     enableScope(Scope.KANBAN);
 
@@ -213,20 +206,6 @@ export function ProjectTasks() {
     updateAndSaveConfig,
     seenFeatures,
   ]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (hasShownMigrationDialogRef.current) return;
-
-    hasShownMigrationDialogRef.current = true;
-
-    BetaWorkspacesDialog.show().then((shouldMigrate) => {
-      BetaWorkspacesDialog.hide();
-      if (shouldMigrate === true) {
-        navigate('/migrate');
-      }
-    });
-  }, [isLoaded, navigate]);
 
   const isLatest = attemptId === 'latest';
   const { data: attempts = [], isLoading: isAttemptsLoading } = useTaskAttempts(
@@ -355,8 +334,11 @@ export function ProjectTasks() {
 
   const kanbanColumns = useMemo(() => {
     const columns: KanbanColumns = {
+      backlog: [],
       todo: [],
-      inprogress: [],
+      spec: [],
+      plan: [],
+      ralph: [],
       inreview: [],
       done: [],
       cancelled: [],
@@ -397,8 +379,11 @@ export function ProjectTasks() {
 
   const visibleTasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = {
+      backlog: [],
       todo: [],
-      inprogress: [],
+      spec: [],
+      plan: [],
+      ralph: [],
       inreview: [],
       done: [],
       cancelled: [],
@@ -905,62 +890,6 @@ export function ProjectTasks() {
           <AlertDescription>{streamError}</AlertDescription>
         </Alert>
       )}
-
-      <div className="mx-4 my-4 flex justify-center">
-        <div className="max-w-2xl w-full p-3 border border-orange-500/30 bg-orange-500/5 rounded flex items-center gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            {project?.remote_project_id ? (
-              <Cloud className="h-5 w-5 text-orange-500" />
-            ) : (
-              <Sparkles className="h-5 w-5 text-orange-500" />
-            )}
-            <div>
-              {project?.remote_project_id ? (
-                <>
-                  <p className="text-sm font-medium">
-                    Project migrated to Cloud
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Access collaboration, tags, priorities, and more
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium">
-                    Migrate this project to the cloud
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Get collaboration, tags, priorities, sub-issues and more
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-          {project?.remote_project_id ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  `/projects/${project.remote_project_id}${selectedOrgId ? `?orgId=${selectedOrgId}` : ''}`
-                )
-              }
-              className="flex items-center gap-1.5"
-            >
-              View project
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/migrate')}
-            >
-              Learn more
-            </Button>
-          )}
-        </div>
-      </div>
 
       <div className="flex-1 min-h-0">{attemptArea}</div>
     </div>

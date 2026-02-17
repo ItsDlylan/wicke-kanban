@@ -19,6 +19,8 @@ import { GitActionsDialog } from '@/components/dialogs/tasks/GitActionsDialog';
 import { EditBranchNameDialog } from '@/components/dialogs/tasks/EditBranchNameDialog';
 import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
+import { SpecSheetDialog } from '@/components/dialogs/tasks/SpecSheetDialog';
+import { SprintPlannerDialog } from '@/components/dialogs/tasks/SprintPlannerDialog';
 
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceWithSession } from '@/types/attempt';
@@ -110,6 +112,24 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleSpecSheet = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    SpecSheetDialog.show({
+      taskId: task.id,
+      taskTitle: task.title,
+    });
+  };
+
+  const handleSprintPlanner = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    SprintPlannerDialog.show({
+      taskId: task.id,
+      taskTitle: task.title,
+    });
+  };
+
   const handleGitActions = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!attempt?.id || !task) return;
@@ -192,6 +212,17 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
           {hasTaskActions && (
             <>
               <DropdownMenuLabel>{t('actionsMenu.task')}</DropdownMenuLabel>
+              <DropdownMenuItem disabled={!projectId} onClick={handleSpecSheet}>
+                Spec Sheet
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={
+                  !task || !['spec', 'plan', 'ralph'].includes(task.status)
+                }
+                onClick={handleSprintPlanner}
+              >
+                Sprint Planner
+              </DropdownMenuItem>
               <DropdownMenuItem disabled={!projectId} onClick={handleEdit}>
                 {t('common:buttons.edit')}
               </DropdownMenuItem>

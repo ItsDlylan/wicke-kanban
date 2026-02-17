@@ -1,13 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import {
-  Play,
-  Square,
-  SquareTerminal,
-  Settings,
-  ExternalLink,
-  Wrench,
-} from 'lucide-react';
+import { Play, Square, SquareTerminal, Settings, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Project } from 'shared/types';
 import { useUserSystem } from '@/components/ConfigProvider';
@@ -69,7 +62,9 @@ export function NoServerContent({
         description: COMPANION_INSTALL_TASK_DESCRIPTION,
         status: null,
         parent_workspace_id: null,
+        parent_task_id: null,
         image_ids: null,
+        sort_order: null,
       },
       executor_profile_id: config.executor_profile,
       repos,
@@ -165,15 +160,9 @@ export function NoServerContent({
                   : 'Install companion automatically'}
               </Button>
               <div>
-                <a
-                  href="https://github.com/BloopAI/vibe-kanban-web-companion"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
+                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                   {t('preview.noServer.companionLink')}
-                </a>
+                </span>
               </div>
             </div>
           </div>

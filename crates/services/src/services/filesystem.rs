@@ -234,7 +234,7 @@ impl FilesystemService {
                         return false;
                     }
 
-                    // Skip vibe-kanban temp directory and all subdirectories
+                    // Skip wicke-kanban temp directory and all subdirectories
                     // Normalize to handle macOS /private/var vs /var aliasing
                     if utils::path::normalize_macos_private_alias(path)
                         .starts_with(&vibe_kanban_temp_dir)
