@@ -19,6 +19,7 @@ use executors::{
     },
 };
 use futures::future::{BoxFuture, FutureExt, Shared};
+use serde_json::Value;
 use sqlx::{Error as SqlxError, SqlitePool};
 use thiserror::Error;
 use tokio::sync::{RwLock, oneshot};
@@ -35,10 +36,10 @@ struct PendingApproval {
     entry: NormalizedEntry,
     execution_process_id: Uuid,
     tool_name: String,
-    response_tx: oneshot::Sender<ApprovalStatus>,
+    response_tx: oneshot::Sender<(ApprovalStatus, Option<Value>)>,
 }
 
-type ApprovalWaiter = Shared<BoxFuture<'static, ApprovalStatus>>;
+type ApprovalWaiter = Shared<BoxFuture<'static, (ApprovalStatus, Option<Value>)>>;
 
 #[derive(Debug)]
 pub struct ToolContext {
@@ -84,7 +85,7 @@ impl Approvals {
     ) -> Result<(ApprovalRequest, ApprovalWaiter), ApprovalError> {
         let (tx, rx) = oneshot::channel();
         let waiter: ApprovalWaiter = rx
-            .map(|result| result.unwrap_or(ApprovalStatus::TimedOut))
+            .map(|result| result.unwrap_or((ApprovalStatus::TimedOut, None)))
             .boxed()
             .shared();
         let req_id = request.id.clone();
@@ -146,7 +147,7 @@ impl Approvals {
     ) -> Result<(ApprovalStatus, ToolContext), ApprovalError> {
         if let Some((_, p)) = self.pending.remove(id) {
             self.completed.insert(id.to_string(), req.status.clone());
-            let _ = p.response_tx.send(req.status.clone());
+            let _ = p.response_tx.send((req.status.clone(), req.updated_input));
 
             if let Some(store) = self.msg_store_by_id(&p.execution_process_id).await {
                 let status = ToolStatus::from_approval_status(&req.status).ok_or(
@@ -211,18 +212,22 @@ impl Approvals {
         let deadline = tokio::time::Instant::now() + to_wait;
 
         tokio::spawn(async move {
-            let status = tokio::select! {
+            let (status, _updated_input) = tokio::select! {
                 biased;
 
                 resolved = waiter.clone() => resolved,
-                _ = tokio::time::sleep_until(deadline) => ApprovalStatus::TimedOut,
+                _ = tokio::time::sleep_until(deadline) => (ApprovalStatus::TimedOut, None),
             };
 
             let is_timeout = matches!(&status, ApprovalStatus::TimedOut);
             completed.insert(id.clone(), status.clone());
 
             if is_timeout && let Some((_, pending_approval)) = pending.remove(&id) {
-                if pending_approval.response_tx.send(status.clone()).is_err() {
+                if pending_approval
+                    .response_tx
+                    .send((status.clone(), None))
+                    .is_err()
+                {
                     tracing::debug!("approval '{}' timeout notification receiver dropped", id);
                 }
 

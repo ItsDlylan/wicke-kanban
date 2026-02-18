@@ -54,4 +54,7 @@ pub enum ApprovalStatus {
 pub struct ApprovalResponse {
     pub execution_process_id: Uuid,
     pub status: ApprovalStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub updated_input: Option<serde_json::Value>,
 }

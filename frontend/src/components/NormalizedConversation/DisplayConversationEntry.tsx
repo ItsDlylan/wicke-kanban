@@ -33,6 +33,7 @@ import {
 import RawLogText from '../common/RawLogText';
 import UserMessage from './UserMessage';
 import PendingApprovalEntry from './PendingApprovalEntry';
+import AskUserQuestionEntry from './AskUserQuestionEntry';
 import { NextActionCard } from './NextActionCard';
 import { cn } from '@/lib/utils';
 import { useRetryUi } from '@/contexts/RetryUiContext';
@@ -865,6 +866,29 @@ function DisplayConversationEntry({
         {body}
       </div>
     );
+
+    if (
+      isPendingApprovalStatus(status) &&
+      toolEntry.tool_name === 'AskUserQuestion'
+    ) {
+      const args =
+        toolEntry.action_type.action === 'tool'
+          ? toolEntry.action_type.arguments
+          : null;
+      const questions =
+        args && typeof args === 'object' && !Array.isArray(args)
+          ? (args as Record<string, JsonValue | undefined>).questions
+          : null;
+      return (
+        <AskUserQuestionEntry
+          pendingStatus={status}
+          executionProcessId={executionProcessId}
+          questions={questions ?? null}
+        >
+          {content}
+        </AskUserQuestionEntry>
+      );
+    }
 
     if (isPendingApprovalStatus(status)) {
       return (

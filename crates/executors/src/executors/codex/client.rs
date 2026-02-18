@@ -312,9 +312,10 @@ impl AppServerClient {
             .as_ref()
             .ok_or(ExecutorApprovalError::ServiceUnavailable)?;
 
-        Ok(approval_service
+        let (status, _updated_input) = approval_service
             .request_tool_approval(tool_name, tool_input, tool_call_id, self.cancel.clone())
-            .await?)
+            .await?;
+        Ok(status)
     }
 
     pub async fn register_session(&self, conversation_id: &ThreadId) -> Result<(), ExecutorError> {

@@ -68,7 +68,7 @@ impl ClaudeAgentClient {
             .as_ref()
             .ok_or(ExecutorApprovalError::ServiceUnavailable)?;
 
-        let status = approval_service
+        let (status, updated_input) = approval_service
             .request_tool_approval(
                 &tool_name,
                 tool_input.clone(),
@@ -97,9 +97,10 @@ impl ClaudeAgentClient {
 
         match status {
             ApprovalStatus::Approved => {
+                let final_input = updated_input.unwrap_or(tool_input);
                 if tool_name == EXIT_PLAN_MODE_NAME {
                     Ok(PermissionResult::Allow {
-                        updated_input: tool_input,
+                        updated_input: final_input,
                         updated_permissions: Some(vec![PermissionUpdate {
                             update_type: PermissionUpdateType::SetMode,
                             mode: Some(PermissionMode::BypassPermissions),
@@ -111,7 +112,7 @@ impl ClaudeAgentClient {
                     })
                 } else {
                     Ok(PermissionResult::Allow {
-                        updated_input: tool_input,
+                        updated_input: final_input,
                         updated_permissions: None,
                     })
                 }

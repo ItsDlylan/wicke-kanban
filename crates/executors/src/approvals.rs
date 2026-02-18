@@ -33,13 +33,16 @@ pub trait ExecutorApprovalService: Send + Sync {
     ///
     /// The `cancel` token allows the caller to cancel the approval request early.
     /// When cancelled, implementations should return `ExecutorApprovalError::Cancelled`.
+    ///
+    /// Returns `(ApprovalStatus, Option<Value>)` where the second element is an optional
+    /// `updated_input` provided by the frontend (e.g., for AskUserQuestion answers).
     async fn request_tool_approval(
         &self,
         tool_name: &str,
         tool_input: Value,
         tool_call_id: &str,
         cancel: CancellationToken,
-    ) -> Result<ApprovalStatus, ExecutorApprovalError>;
+    ) -> Result<(ApprovalStatus, Option<Value>), ExecutorApprovalError>;
 }
 
 #[derive(Debug, Default)]
@@ -53,8 +56,8 @@ impl ExecutorApprovalService for NoopExecutorApprovalService {
         _tool_input: Value,
         _tool_call_id: &str,
         _cancel: CancellationToken,
-    ) -> Result<ApprovalStatus, ExecutorApprovalError> {
-        Ok(ApprovalStatus::Approved)
+    ) -> Result<(ApprovalStatus, Option<Value>), ExecutorApprovalError> {
+        Ok((ApprovalStatus::Approved, None))
     }
 }
 

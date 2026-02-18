@@ -113,7 +113,7 @@ impl acp::Client for AcpClient {
             )
             .await
         {
-            Ok(s) => s,
+            Ok((s, _updated_input)) => s,
             Err(ExecutorApprovalError::Cancelled) => {
                 debug!("ACP approval cancelled for tool_call_id={}", tool_call_id);
                 return Ok(acp::RequestPermissionResponse::new(

@@ -41,7 +41,7 @@ impl ExecutorApprovalService for ExecutorApprovalBridge {
         tool_input: Value,
         tool_call_id: &str,
         cancel: CancellationToken,
-    ) -> Result<ApprovalStatus, ExecutorApprovalError> {
+    ) -> Result<(ApprovalStatus, Option<Value>), ExecutorApprovalError> {
         super::ensure_task_in_review(&self.db.pool, self.execution_process_id).await;
 
         let request = ApprovalRequest::from_create(
@@ -73,13 +73,13 @@ impl ExecutorApprovalService for ExecutorApprovalBridge {
             )
             .await;
 
-        let status = tokio::select! {
+        let (status, updated_input) = tokio::select! {
             _ = cancel.cancelled() => {
                 tracing::info!("Approval request cancelled for tool_call_id={}", tool_call_id);
                 self.approvals.cancel(&approval_id).await;
                 return Err(ExecutorApprovalError::Cancelled);
             }
-            status = waiter.clone() => status,
+            result = waiter.clone() => result,
         };
 
         if matches!(status, ApprovalStatus::Pending) {
@@ -88,6 +88,6 @@ impl ExecutorApprovalService for ExecutorApprovalBridge {
             ));
         }
 
-        Ok(status)
+        Ok((status, updated_input))
     }
 }

@@ -162,7 +162,6 @@ impl ClaudeCode {
             "--input-format=stream-json",
             "--include-partial-messages",
             "--replay-user-messages",
-            "--disallowedTools=AskUserQuestion",
         ]);
 
         apply_overrides(builder, &self.cmd)
@@ -845,6 +844,11 @@ impl ClaudeLogProcessor {
                     })
                     .collect(),
                 operation: "write".to_string(),
+            },
+            ClaudeToolData::AskUserQuestion { questions, .. } => ActionType::Tool {
+                tool_name: "AskUserQuestion".to_string(),
+                arguments: Some(serde_json::json!({ "questions": questions })),
+                result: None,
             },
             ClaudeToolData::TodoRead { .. } => ActionType::TodoManagement {
                 todos: vec![],
@@ -2138,6 +2142,12 @@ pub enum ClaudeToolData {
         #[serde(default)]
         steps: Option<u32>,
     },
+    #[serde(rename = "AskUserQuestion")]
+    AskUserQuestion {
+        questions: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        answers: Option<serde_json::Value>,
+    },
     #[serde(rename = "TodoRead", alias = "todo_read")]
     TodoRead {},
     #[serde(untagged)]
@@ -2211,6 +2221,7 @@ impl ClaudeToolData {
             ClaudeToolData::NotebookEdit { .. } => "NotebookEdit",
             ClaudeToolData::WebFetch { .. } => "WebFetch",
             ClaudeToolData::WebSearch { .. } => "WebSearch",
+            ClaudeToolData::AskUserQuestion { .. } => "AskUserQuestion",
             ClaudeToolData::TodoRead { .. } => "TodoRead",
             ClaudeToolData::Oracle { .. } => "Oracle",
             ClaudeToolData::Mermaid { .. } => "Mermaid",
