@@ -103,6 +103,20 @@ const MakeRalphReadyDialogImpl = NiceModal.create<MakeRalphReadyDialogProps>(
     const abortControllerRef = useRef<AbortController | null>(null);
     const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    // Reset all state when dialog reopens for a different task
+    useEffect(() => {
+      setStep('spec');
+      setError(null);
+      setChildren([]);
+      setOverview('');
+      setRequirements([]);
+      setAcceptanceCriteria([]);
+      setConstraints([]);
+      setTechNotes('');
+      setIsGenerating(false);
+      setGeneratingElapsed(0);
+    }, [taskId]);
+
     // Clean up timer on unmount
     useEffect(() => {
       return () => {

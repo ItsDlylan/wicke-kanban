@@ -96,6 +96,16 @@ const SpecSheetDialogImpl = NiceModal.create<SpecSheetDialogProps>(
     const [constraints, setConstraints] = useState<string[]>([]);
     const [techNotes, setTechNotes] = useState('');
 
+    // Reset form state when dialog reopens for a different task
+    useEffect(() => {
+      setOverview('');
+      setRequirements([]);
+      setAcceptanceCriteria([]);
+      setConstraints([]);
+      setTechNotes('');
+      setError(null);
+    }, [taskId]);
+
     const loadSpec = useCallback(async () => {
       try {
         setIsLoading(true);
