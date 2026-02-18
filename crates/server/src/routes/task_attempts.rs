@@ -873,6 +873,82 @@ pub async fn get_task_attempt_branch_status(
     Ok(ResponseJson(ApiResponse::success(results)))
 }
 
+pub async fn get_task_attempt_diffs(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Vec<utils::diff::Diff>>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let repositories = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id).await?;
+    let workspace_repos = WorkspaceRepo::find_by_workspace_id(pool, workspace.id).await?;
+    let target_branches: HashMap<_, _> = workspace_repos
+        .iter()
+        .map(|wr| (wr.repo_id, wr.target_branch.clone()))
+        .collect();
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_dir = PathBuf::from(&container_ref);
+
+    let mut all_diffs = Vec::new();
+
+    for repo in repositories {
+        let Some(target_branch) = target_branches.get(&repo.id).cloned() else {
+            continue;
+        };
+
+        let worktree_path = workspace_dir.join(&repo.name);
+
+        let diffs = if worktree_path.exists() {
+            // Worktree exists on disk — use DiffTarget::Worktree (includes uncommitted changes)
+            match deployment
+                .git()
+                .get_base_commit(&repo.path, &workspace.branch, &target_branch)
+            {
+                Ok(base_commit) => deployment
+                    .git()
+                    .get_diffs(
+                        git::DiffTarget::Worktree {
+                            worktree_path: &worktree_path,
+                            base_commit: &base_commit,
+                        },
+                        None,
+                    )
+                    .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            }
+        } else {
+            // Worktree is gone (archived workspace) — fall back to DiffTarget::Branch
+            deployment
+                .git()
+                .get_diffs(
+                    git::DiffTarget::Branch {
+                        repo_path: &repo.path,
+                        branch_name: &workspace.branch,
+                        base_branch: &target_branch,
+                    },
+                    None,
+                )
+                .unwrap_or_default()
+        };
+
+        // Tag each diff with the repo_id
+        let diffs_with_repo: Vec<utils::diff::Diff> = diffs
+            .into_iter()
+            .map(|mut d| {
+                d.repo_id = Some(repo.id);
+                d
+            })
+            .collect();
+
+        all_diffs.extend(diffs_with_repo);
+    }
+
+    Ok(ResponseJson(ApiResponse::success(all_diffs)))
+}
+
 #[derive(serde::Deserialize, Debug, TS)]
 pub struct ChangeTargetBranchRequest {
     pub repo_id: Uuid,
@@ -1873,6 +1949,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
             .route("/run-cleanup-script", post(run_cleanup_script))
             .route("/run-archive-script", post(run_archive_script))
             .route("/branch-status", get(get_task_attempt_branch_status))
+            .route("/diffs", get(get_task_attempt_diffs))
             .route("/diff/ws", get(stream_task_attempt_diff_ws))
             .route("/merge", post(merge_task_attempt))
             .route("/push", post(push_task_attempt_branch))

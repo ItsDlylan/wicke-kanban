@@ -15,6 +15,7 @@ import {
   type NormalizedGitHubComment,
 } from '@/hooks/useGitHubComments';
 import { useDiffStream } from '@/hooks/useDiffStream';
+import { useWorkspaceDiffs } from '@/hooks/useWorkspaceDiffs';
 import { attemptsApi } from '@/lib/api';
 import { useDiffViewStore } from '@/stores/useDiffViewStore';
 import type {
@@ -147,7 +148,19 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   });
 
   // Stream diffs for the current workspace
-  const { diffs } = useDiffStream(workspaceId ?? null, !isCreateMode);
+  const { diffs: streamDiffs, isInitialized: streamInitialized } =
+    useDiffStream(workspaceId ?? null, !isCreateMode);
+
+  // Fetch REST diffs when stream is initialized but has no diffs (idle/completed workspace)
+  const shouldFetchRest =
+    !isCreateMode && streamInitialized && streamDiffs.length === 0;
+  const { data: restDiffs } = useWorkspaceDiffs(workspaceId, shouldFetchRest);
+
+  // Use REST diffs when available and stream is empty, otherwise use stream diffs
+  const diffs = useMemo(
+    () => (restDiffs && restDiffs.length > 0 ? restDiffs : streamDiffs),
+    [restDiffs, streamDiffs]
+  );
 
   const diffPaths = useMemo(
     () =>

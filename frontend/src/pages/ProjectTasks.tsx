@@ -19,7 +19,11 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttempts } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useBranchStatus, useAttemptExecution } from '@/hooks';
+import {
+  useBranchStatus,
+  useAttemptExecution,
+  useWorkspaceDiffs,
+} from '@/hooks';
 import { paths } from '@/lib/paths';
 import { ExecutionProcessesProvider } from '@/contexts/ExecutionProcessesContext';
 import { ClickedElementsProvider } from '@/contexts/ClickedElementsProvider';
@@ -109,6 +113,10 @@ function DiffsPanelContainer({
   branchStatusError?: Error | null;
 }) {
   const { isAttemptRunning } = useAttemptExecution(attempt?.id);
+  const { data: restDiffs, isLoading: restDiffsLoading } = useWorkspaceDiffs(
+    attempt?.id,
+    !isAttemptRunning
+  );
 
   return (
     <DiffsPanel
@@ -125,6 +133,8 @@ function DiffsPanelContainer({
             }
           : undefined
       }
+      externalDiffs={isAttemptRunning ? undefined : restDiffs}
+      externalDiffsLoading={isAttemptRunning ? undefined : restDiffsLoading}
     />
   );
 }

@@ -23,6 +23,8 @@ import GitOperations, {
 interface DiffsPanelProps {
   selectedAttempt: Workspace | null;
   gitOps?: GitOperationsInputs;
+  externalDiffs?: Diff[];
+  externalDiffsLoading?: boolean;
 }
 
 type DiffCollapseDefaults = Record<DiffChangeKind, boolean>;
@@ -48,24 +50,56 @@ const exceedsMaxLineCount = (d: Diff, maxLines: number): boolean => {
 const getDiffId = ({ diff, index }: { diff: Diff; index: number }) =>
   `${diff.newPath || diff.oldPath || index}`;
 
-export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
+export function DiffsPanel({
+  selectedAttempt,
+  gitOps,
+  externalDiffs,
+  externalDiffsLoading,
+}: DiffsPanelProps) {
   const { t } = useTranslation('tasks');
+  const useExternal = externalDiffs !== undefined;
   const [loadingState, setLoadingState] = useState<
     'loading' | 'loaded' | 'timed-out'
   >('loading');
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
-  const { diffs, error } = useDiffStream(selectedAttempt?.id ?? null, true);
-  const { fileCount, added, deleted } = useDiffSummary(
-    selectedAttempt?.id ?? null
+  const { diffs: streamDiffs, error } = useDiffStream(
+    useExternal ? null : (selectedAttempt?.id ?? null),
+    !useExternal
   );
+  const {
+    fileCount: streamFileCount,
+    added: streamAdded,
+    deleted: streamDeleted,
+  } = useDiffSummary(useExternal ? null : (selectedAttempt?.id ?? null));
+
+  const diffs = useExternal ? externalDiffs : streamDiffs;
+
+  const { fileCount, added, deleted } = useMemo(() => {
+    if (useExternal) {
+      return diffs.reduce(
+        (acc, d) => {
+          acc.added += d.additions ?? 0;
+          acc.deleted += d.deletions ?? 0;
+          return acc;
+        },
+        { fileCount: diffs.length, added: 0, deleted: 0 }
+      );
+    }
+    return {
+      fileCount: streamFileCount,
+      added: streamAdded,
+      deleted: streamDeleted,
+    };
+  }, [useExternal, diffs, streamFileCount, streamAdded, streamDeleted]);
 
   // If no diffs arrive within 3 seconds, stop showing the spinner
   useEffect(() => {
+    if (useExternal) return;
     if (loadingState !== 'loading') return;
     const timer = setTimeout(() => setLoadingState('timed-out'), 3000);
     return () => clearTimeout(timer);
-  }, [loadingState]);
+  }, [loadingState, useExternal]);
 
   if (diffs.length > 0 && loadingState === 'loading') {
     setLoadingState('loaded');
@@ -96,7 +130,9 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     }
   }
 
-  const loading = loadingState === 'loading';
+  const loading = useExternal
+    ? (externalDiffsLoading ?? false)
+    : loadingState === 'loading';
 
   const ids = useMemo(() => {
     return diffs.map((d, i) => getDiffId({ diff: d, index: i }));

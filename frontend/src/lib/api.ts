@@ -100,6 +100,7 @@ import {
   SpecSheet,
   CreateSpecSheet,
   ChildTaskWithDeps,
+  Diff,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -659,6 +660,11 @@ export const attemptsApi = {
       `/api/task-attempts/${attemptId}/branch-status`
     );
     return handleApiResponse<RepoBranchStatus[]>(response);
+  },
+
+  getDiffs: async (attemptId: string): Promise<Diff[]> => {
+    const response = await makeRequest(`/api/task-attempts/${attemptId}/diffs`);
+    return handleApiResponse<Diff[]>(response);
   },
 
   getRepos: async (attemptId: string): Promise<RepoWithTargetBranch[]> => {
