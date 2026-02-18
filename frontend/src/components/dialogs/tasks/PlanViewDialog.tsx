@@ -29,6 +29,13 @@ const PlanViewDialogImpl = NiceModal.create<PlanViewDialogProps>(
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Sync state when dialog reopens with a different task
+    useEffect(() => {
+      setCurrentPlan(plan);
+      setCurrentStatus(planStatus);
+      setError(null);
+    }, [taskId, plan, planStatus]);
+
     // Poll for updates while generating
     useEffect(() => {
       if (currentStatus !== 'generating') return;
