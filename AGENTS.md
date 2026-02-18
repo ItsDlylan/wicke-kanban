@@ -41,6 +41,43 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 
 ## Before Completing a Task
 - Run `pnpm run format` to format all Rust and frontend code.
+- Run `pnpm run backend:check` to ensure Rust changes compile.
+
+## Worktree Workflow (Isolation Tiers)
+
+Use git worktrees to isolate development environments. Each worktree gets its own branch, database, ports, and dependencies.
+
+### Tier 1 — Shared Environment (Default)
+- **Use for:** code review, docs, reading, simple refactors
+- **Database:** shared `dev_assets/db.sqlite`
+- **URL:** `http://localhost:<port>` (from main `.dev-ports.json`)
+- **Setup:** none needed — work directly in the main checkout
+
+### Tier 2 — Isolated Worktree + Database
+- **Use for:** feature development, database migrations, testing with data
+- **Database:** own `dev_assets/db.sqlite` (copied from `dev_assets_seed/`)
+- **URL:** `http://localhost:<unique-port>` (auto-allocated)
+- **Creation:** `bin/worktree create feature/my-feature`
+
+### Tier 3 — Worktree with Shared Database
+- **Use for:** frontend-only changes, CSS/Tailwind, React components
+- **Database:** symlinked to main `dev_assets/`
+- **URL:** `http://localhost:<unique-port>` (auto-allocated)
+- **Creation:** `bin/worktree create feature/ui-update --no-db`
+
+### Decision Checklist
+1. Does the task touch the database or migrations? → **Tier 2**
+2. Is it frontend-only with no data concerns? → **Tier 3**
+3. Is it a quick read/review/doc change? → **Tier 1**
+
+### Worktree Management Commands
+- `bin/worktree create <branch> [--from <base>] [--no-db]` — Create worktree
+- `bin/worktree list` — List all worktrees with status
+- `bin/worktree info <branch>` — Show worktree details
+- `bin/worktree url [<branch>]` — Output dev URL
+- `bin/worktree remove <branch>` — Remove worktree + cleanup
+- `bin/worktree cleanup [--dry-run]` — Remove merged worktrees
+- `bin/install-hooks` — Install git hooks (post-merge auto-cleanup)
 
 ## Coding Style & Naming Conventions
 - Rust: `rustfmt` enforced (`rustfmt.toml`); group imports by crate; snake_case modules, PascalCase types.

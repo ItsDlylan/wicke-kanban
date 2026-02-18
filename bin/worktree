@@ -1,0 +1,530 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────
+# Wickeban Worktree Manager
+# Creates isolated development environments using git worktrees.
+# Each worktree gets its own database, ports, and dependencies.
+# ─────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WORKTREES_DIR="$(cd "$PROJECT_ROOT/.." && pwd)/wickeban-worktrees"
+DB_SEED_PATH="dev_assets_seed"
+DEV_ASSETS_PATH="dev_assets"
+PORTS_FILE=".dev-ports.json"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# ─────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────
+
+info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
+success() { echo -e "${GREEN}[OK]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+die()     { error "$@"; exit 1; }
+
+# Sanitize branch name for use as directory name
+sanitize_branch() {
+    echo "$1" | sed 's/[\/]/-/g'
+}
+
+# Get worktree path for a branch
+worktree_path() {
+    local branch="$1"
+    local dir_name
+    dir_name="$(sanitize_branch "$branch")"
+    echo "$WORKTREES_DIR/$dir_name"
+}
+
+# Check if we're inside a worktree (not main)
+is_worktree() {
+    local git_dir
+    git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+    [[ "$git_dir" == *".git/worktrees/"* ]]
+}
+
+# Get the current branch name
+current_branch() {
+    git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null
+}
+
+# Read ports from a worktree's .dev-ports.json
+read_ports() {
+    local wt_path="$1"
+    local ports_file="$wt_path/$PORTS_FILE"
+    if [[ -f "$ports_file" ]]; then
+        cat "$ports_file"
+    else
+        echo "{}"
+    fi
+}
+
+# Get frontend port from a worktree
+get_frontend_port() {
+    local wt_path="$1"
+    local ports
+    ports="$(read_ports "$wt_path")"
+    echo "$ports" | grep -o '"frontend":[[:space:]]*[0-9]*' | grep -o '[0-9]*' || echo ""
+}
+
+# Get backend port from a worktree
+get_backend_port() {
+    local wt_path="$1"
+    local ports
+    ports="$(read_ports "$wt_path")"
+    echo "$ports" | grep -o '"backend":[[:space:]]*[0-9]*' | grep -o '[0-9]*' || echo ""
+}
+
+# Get the frontend URL for a worktree
+get_url() {
+    local wt_path="$1"
+    local port
+    port="$(get_frontend_port "$wt_path")"
+    if [[ -n "$port" ]]; then
+        echo "http://localhost:$port"
+    else
+        echo "(ports not allocated — run pnpm run dev)"
+    fi
+}
+
+# Check if a branch exists
+branch_exists() {
+    git -C "$PROJECT_ROOT" rev-parse --verify "$1" &>/dev/null
+}
+
+# Check if a worktree already exists for a branch
+worktree_exists() {
+    local branch="$1"
+    local wt_path
+    wt_path="$(worktree_path "$branch")"
+    [[ -d "$wt_path" ]]
+}
+
+# ─────────────────────────────────────────────
+# Commands
+# ─────────────────────────────────────────────
+
+cmd_create() {
+    local branch=""
+    local from_branch="main"
+    local no_db=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from)
+                shift
+                from_branch="${1:?--from requires a branch name}"
+                ;;
+            --no-db)
+                no_db=true
+                ;;
+            -*)
+                die "Unknown option: $1"
+                ;;
+            *)
+                if [[ -z "$branch" ]]; then
+                    branch="$1"
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    [[ -n "$branch" ]] || die "Usage: bin/worktree create <branch> [--from <base>] [--no-db]"
+
+    local wt_path
+    wt_path="$(worktree_path "$branch")"
+
+    # Check if worktree already exists
+    if worktree_exists "$branch"; then
+        die "Worktree already exists at $wt_path"
+    fi
+
+    # Verify base branch exists
+    if ! branch_exists "$from_branch"; then
+        die "Base branch '$from_branch' does not exist"
+    fi
+
+    info "Creating worktree for branch '${BOLD}$branch${NC}' from '${BOLD}$from_branch${NC}'"
+
+    # 1. Create worktrees directory
+    mkdir -p "$WORKTREES_DIR"
+
+    # 2. Create git worktree
+    if branch_exists "$branch"; then
+        info "Branch '$branch' already exists, checking it out in worktree..."
+        git -C "$PROJECT_ROOT" worktree add "$wt_path" "$branch"
+    else
+        info "Creating new branch '$branch' from '$from_branch'..."
+        git -C "$PROJECT_ROOT" worktree add -b "$branch" "$wt_path" "$from_branch"
+    fi
+    success "Git worktree created"
+
+    # 3. Set up database
+    if [[ "$no_db" == true ]]; then
+        # Tier 3: symlink to main dev_assets
+        info "Symlinking dev_assets to main project (Tier 3 — shared DB)..."
+        ln -s "$PROJECT_ROOT/$DEV_ASSETS_PATH" "$wt_path/$DEV_ASSETS_PATH" 2>/dev/null || {
+            # If main dev_assets doesn't exist yet, copy from seed first
+            if [[ ! -d "$PROJECT_ROOT/$DEV_ASSETS_PATH" ]]; then
+                info "Main dev_assets not found, creating from seed..."
+                cp -r "$PROJECT_ROOT/$DB_SEED_PATH" "$PROJECT_ROOT/$DEV_ASSETS_PATH"
+            fi
+            ln -s "$PROJECT_ROOT/$DEV_ASSETS_PATH" "$wt_path/$DEV_ASSETS_PATH"
+        }
+        success "Symlinked dev_assets (shared database)"
+    else
+        # Tier 2: copy seed to own dev_assets
+        info "Copying database seed (Tier 2 — isolated DB)..."
+        if [[ -d "$PROJECT_ROOT/$DB_SEED_PATH" ]]; then
+            cp -r "$PROJECT_ROOT/$DB_SEED_PATH" "$wt_path/$DEV_ASSETS_PATH"
+            success "Copied dev_assets_seed → dev_assets (isolated database)"
+        else
+            warn "No dev_assets_seed found — skipping database setup"
+        fi
+    fi
+
+    # 4. Allocate ports
+    info "Allocating development ports..."
+    (cd "$wt_path" && node scripts/setup-dev-environment.js get) || {
+        warn "Port allocation failed — ports will be allocated on first 'pnpm run dev'"
+    }
+
+    # 5. Install dependencies
+    info "Installing dependencies (pnpm install)..."
+    (cd "$wt_path" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) || {
+        warn "pnpm install encountered issues — you may need to run it manually"
+    }
+    success "Dependencies installed"
+
+    # Print summary
+    echo ""
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}Worktree created successfully!${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}Branch:${NC}    $branch"
+    echo -e "  ${CYAN}Path:${NC}      $wt_path"
+    echo -e "  ${CYAN}Database:${NC}  $([[ "$no_db" == true ]] && echo "shared (symlinked)" || echo "isolated (copied from seed)")"
+
+    local frontend_port backend_port
+    frontend_port="$(get_frontend_port "$wt_path")"
+    backend_port="$(get_backend_port "$wt_path")"
+    if [[ -n "$frontend_port" ]]; then
+        echo -e "  ${CYAN}Frontend:${NC}  http://localhost:$frontend_port"
+        echo -e "  ${CYAN}Backend:${NC}   http://localhost:$backend_port"
+    fi
+
+    echo ""
+    echo -e "  ${YELLOW}Next steps:${NC}"
+    echo -e "    cd $wt_path"
+    echo -e "    pnpm run dev"
+    echo ""
+}
+
+cmd_list() {
+    echo -e "${BOLD}Wickeban Worktrees${NC}"
+    echo ""
+
+    local found=false
+
+    while IFS= read -r line; do
+        if [[ "$line" == "worktree "* ]]; then
+            local wt_path="${line#worktree }"
+            local wt_branch=""
+            local wt_head=""
+            local is_bare=false
+
+            # Read subsequent lines for this worktree entry
+            while IFS= read -r detail; do
+                [[ -z "$detail" ]] && break
+                if [[ "$detail" == "branch "* ]]; then
+                    wt_branch="${detail#branch refs/heads/}"
+                elif [[ "$detail" == "HEAD "* ]]; then
+                    wt_head="${detail#HEAD }"
+                elif [[ "$detail" == "bare" ]]; then
+                    is_bare=true
+                fi
+            done
+
+            [[ "$is_bare" == true ]] && continue
+            found=true
+
+            local db_status url_display
+            if [[ -L "$wt_path/$DEV_ASSETS_PATH" ]]; then
+                db_status="${YELLOW}shared (symlink)${NC}"
+            elif [[ -d "$wt_path/$DEV_ASSETS_PATH" ]]; then
+                db_status="${GREEN}isolated${NC}"
+            else
+                db_status="${RED}missing${NC}"
+            fi
+
+            url_display="$(get_url "$wt_path")"
+
+            # Determine if this is the main worktree
+            local label=""
+            if [[ "$wt_path" == "$PROJECT_ROOT" ]]; then
+                label=" ${CYAN}(main)${NC}"
+            fi
+
+            echo -e "  ${BOLD}${wt_branch:-detached}${NC}${label}"
+            echo -e "    Path: $wt_path"
+            echo -e "    URL:  $url_display"
+            echo -e "    DB:   $db_status"
+            echo ""
+        fi
+    done < <(git -C "$PROJECT_ROOT" worktree list --porcelain)
+
+    if [[ "$found" == false ]]; then
+        echo "  No worktrees found."
+    fi
+}
+
+cmd_remove() {
+    local branch="${1:?Usage: bin/worktree remove <branch>}"
+    local wt_path
+    wt_path="$(worktree_path "$branch")"
+
+    if [[ ! -d "$wt_path" ]]; then
+        die "No worktree found at $wt_path"
+    fi
+
+    info "Removing worktree for branch '$branch'..."
+
+    # 1. Remove dev_assets (or unlink symlink)
+    if [[ -L "$wt_path/$DEV_ASSETS_PATH" ]]; then
+        info "Unlinking shared dev_assets symlink..."
+        rm "$wt_path/$DEV_ASSETS_PATH"
+    elif [[ -d "$wt_path/$DEV_ASSETS_PATH" ]]; then
+        info "Removing isolated dev_assets..."
+        rm -rf "$wt_path/$DEV_ASSETS_PATH"
+    fi
+
+    # 2. Remove the worktree
+    info "Removing git worktree..."
+    git -C "$PROJECT_ROOT" worktree remove --force "$wt_path" 2>/dev/null || {
+        warn "git worktree remove failed, cleaning up manually..."
+        rm -rf "$wt_path"
+    }
+
+    # 3. Prune stale worktree references
+    git -C "$PROJECT_ROOT" worktree prune
+
+    # 4. Optionally delete the branch if it's been merged
+    if branch_exists "$branch"; then
+        local merged
+        merged="$(git -C "$PROJECT_ROOT" branch --merged main | grep -w "$branch" || true)"
+        if [[ -n "$merged" ]]; then
+            info "Branch '$branch' is merged into main. Deleting..."
+            git -C "$PROJECT_ROOT" branch -d "$branch" 2>/dev/null || true
+        else
+            info "Branch '$branch' is not merged — keeping it."
+        fi
+    fi
+
+    success "Worktree for '$branch' removed"
+}
+
+cmd_cleanup() {
+    local dry_run=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry_run=true ;;
+            *) die "Unknown option: $1" ;;
+        esac
+        shift
+    done
+
+    info "Scanning for merged worktrees to clean up..."
+
+    local cleaned=0
+
+    while IFS= read -r line; do
+        if [[ "$line" == "worktree "* ]]; then
+            local wt_path="${line#worktree }"
+            local wt_branch=""
+
+            while IFS= read -r detail; do
+                [[ -z "$detail" ]] && break
+                if [[ "$detail" == "branch "* ]]; then
+                    wt_branch="${detail#branch refs/heads/}"
+                fi
+            done
+
+            # Skip main worktree
+            [[ "$wt_path" == "$PROJECT_ROOT" ]] && continue
+            [[ -z "$wt_branch" ]] && continue
+
+            # Check if branch is merged into main
+            local merged
+            merged="$(git -C "$PROJECT_ROOT" branch --merged main | grep -w "$wt_branch" || true)"
+            if [[ -n "$merged" ]]; then
+                if [[ "$dry_run" == true ]]; then
+                    echo -e "  ${YELLOW}Would remove:${NC} $wt_branch ($wt_path)"
+                else
+                    info "Removing merged worktree: $wt_branch"
+                    cmd_remove "$wt_branch"
+                fi
+                ((cleaned++))
+            fi
+        fi
+    done < <(git -C "$PROJECT_ROOT" worktree list --porcelain)
+
+    if [[ "$cleaned" -eq 0 ]]; then
+        info "No merged worktrees to clean up."
+    elif [[ "$dry_run" == true ]]; then
+        info "Found $cleaned worktree(s) to clean. Run without --dry-run to remove."
+    else
+        success "Cleaned up $cleaned worktree(s)."
+    fi
+}
+
+cmd_info() {
+    local branch="${1:?Usage: bin/worktree info <branch>}"
+    local wt_path
+    wt_path="$(worktree_path "$branch")"
+
+    if [[ ! -d "$wt_path" ]]; then
+        die "No worktree found for branch '$branch' at $wt_path"
+    fi
+
+    echo -e "${BOLD}Worktree: ${CYAN}$branch${NC}"
+    echo ""
+    echo -e "  ${CYAN}Path:${NC}          $wt_path"
+
+    # Branch info
+    local head_commit
+    head_commit="$(git -C "$wt_path" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+    echo -e "  ${CYAN}Branch:${NC}        $branch"
+    echo -e "  ${CYAN}HEAD:${NC}          $head_commit"
+
+    # Database status
+    if [[ -L "$wt_path/$DEV_ASSETS_PATH" ]]; then
+        local link_target
+        link_target="$(readlink "$wt_path/$DEV_ASSETS_PATH")"
+        echo -e "  ${CYAN}Database:${NC}      shared (symlink → $link_target)"
+    elif [[ -d "$wt_path/$DEV_ASSETS_PATH" ]]; then
+        local db_size
+        db_size="$(du -sh "$wt_path/$DEV_ASSETS_PATH/db.sqlite" 2>/dev/null | cut -f1 || echo "unknown")"
+        echo -e "  ${CYAN}Database:${NC}      isolated ($db_size)"
+    else
+        echo -e "  ${CYAN}Database:${NC}      ${RED}missing${NC}"
+    fi
+
+    # Ports
+    local frontend_port backend_port
+    frontend_port="$(get_frontend_port "$wt_path")"
+    backend_port="$(get_backend_port "$wt_path")"
+    if [[ -n "$frontend_port" ]]; then
+        echo -e "  ${CYAN}Frontend:${NC}      http://localhost:$frontend_port"
+        echo -e "  ${CYAN}Backend:${NC}       http://localhost:$backend_port"
+    else
+        echo -e "  ${CYAN}Ports:${NC}         ${YELLOW}not allocated${NC} (run pnpm run dev)"
+    fi
+
+    # Dependencies
+    if [[ -d "$wt_path/node_modules" ]]; then
+        echo -e "  ${CYAN}node_modules:${NC}  ${GREEN}installed${NC}"
+    else
+        echo -e "  ${CYAN}node_modules:${NC}  ${YELLOW}not installed${NC}"
+    fi
+
+    if [[ -d "$wt_path/target" ]]; then
+        echo -e "  ${CYAN}Rust target:${NC}   ${GREEN}present${NC}"
+    else
+        echo -e "  ${CYAN}Rust target:${NC}   ${YELLOW}not built${NC}"
+    fi
+
+    echo ""
+}
+
+cmd_url() {
+    local branch="${1:-}"
+
+    if [[ -z "$branch" ]]; then
+        # Auto-detect: check if we're in a worktree
+        local current_dir
+        current_dir="$(pwd)"
+        if [[ "$current_dir" == "$WORKTREES_DIR"* ]]; then
+            # Extract branch from worktree path
+            local dir_name
+            dir_name="$(basename "$current_dir")"
+            branch="$(git -C "$current_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+            if [[ -z "$branch" ]]; then
+                die "Could not detect branch. Specify one: bin/worktree url <branch>"
+            fi
+            get_url "$current_dir"
+            return
+        else
+            # Use main project
+            get_url "$PROJECT_ROOT"
+            return
+        fi
+    fi
+
+    local wt_path
+    wt_path="$(worktree_path "$branch")"
+
+    if [[ ! -d "$wt_path" ]]; then
+        die "No worktree found for branch '$branch'"
+    fi
+
+    get_url "$wt_path"
+}
+
+cmd_help() {
+    echo -e "${BOLD}Wickeban Worktree Manager${NC}"
+    echo ""
+    echo "Usage: bin/worktree <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  create <branch> [--from <base>] [--no-db]   Create a new worktree"
+    echo "  list, ls                                     List all worktrees"
+    echo "  remove <branch>                              Remove a worktree"
+    echo "  cleanup [--dry-run]                          Remove merged worktrees"
+    echo "  info <branch>                                Show worktree details"
+    echo "  url [<branch>]                               Output dev URL"
+    echo "  help                                         Show this help"
+    echo ""
+    echo "Tiers:"
+    echo "  Tier 2 (default)    Isolated database — bin/worktree create feature/x"
+    echo "  Tier 3 (--no-db)    Shared database   — bin/worktree create feature/x --no-db"
+    echo ""
+    echo "Worktrees are created in: $WORKTREES_DIR"
+}
+
+# ─────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────
+
+main() {
+    local command="${1:-help}"
+    shift || true
+
+    case "$command" in
+        create)  cmd_create "$@" ;;
+        list|ls) cmd_list ;;
+        remove)  cmd_remove "$@" ;;
+        cleanup) cmd_cleanup "$@" ;;
+        info)    cmd_info "$@" ;;
+        url)     cmd_url "$@" ;;
+        help|--help|-h) cmd_help ;;
+        *)       die "Unknown command: $command. Run 'bin/worktree help' for usage." ;;
+    esac
+}
+
+main "$@"

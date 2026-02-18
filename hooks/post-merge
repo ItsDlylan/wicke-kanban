@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────
+# Post-merge hook: auto-cleanup merged worktrees
+# Runs after `git pull` merges on the main branch.
+# ─────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve project root (works whether hook is symlinked or not)
+if [[ -L "${BASH_SOURCE[0]}" ]]; then
+    REAL_SCRIPT="$(readlink "${BASH_SOURCE[0]}")"
+    PROJECT_ROOT="$(cd "$(dirname "$REAL_SCRIPT")/.." && pwd)"
+else
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
+
+# Only run on main branch
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if [[ "$current_branch" != "main" ]]; then
+    exit 0
+fi
+
+# Only run in the main worktree (not inside a worktree)
+git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+if [[ "$git_dir" == *".git/worktrees/"* ]]; then
+    exit 0
+fi
+
+# Run cleanup
+if [[ -x "$PROJECT_ROOT/bin/worktree" ]]; then
+    echo "[post-merge] Cleaning up merged worktrees..."
+    "$PROJECT_ROOT/bin/worktree" cleanup || true
+fi
