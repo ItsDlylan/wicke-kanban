@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Play } from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { useOpenInEditor } from '@/hooks/useOpenInEditor';
 import { DeleteTaskConfirmationDialog } from '@/components/dialogs/tasks/DeleteTaskConfirmationDialog';
@@ -21,7 +21,8 @@ import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { SpecSheetDialog } from '@/components/dialogs/tasks/SpecSheetDialog';
 import { PlanViewDialog } from '@/components/dialogs/tasks/PlanViewDialog';
-import { SprintPlannerDialog } from '@/components/dialogs/tasks/SprintPlannerDialog';
+import { RalphSessionDialog } from '@/components/dialogs/tasks/RalphSessionDialog';
+import { MakeRalphReadyDialog } from '@/components/dialogs/tasks/MakeRalphReadyDialog';
 
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceWithSession } from '@/types/attempt';
@@ -100,6 +101,14 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task?.id) return;
+    CreateAttemptDialog.show({
+      taskId: task.id,
+    });
+  };
+
   const handleCreateSubtask = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!projectId || !attempt) return;
@@ -133,10 +142,19 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
-  const handleSprintPlanner = (e: React.MouseEvent) => {
+  const handleRalphSession = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!task) return;
-    SprintPlannerDialog.show({
+    RalphSessionDialog.show({
+      taskId: task.id,
+      taskTitle: task.title,
+    });
+  };
+
+  const handleMakeRalphReady = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    MakeRalphReadyDialog.show({
       taskId: task.id,
       taskTitle: task.title,
     });
@@ -234,12 +252,27 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
                 View Plan
               </DropdownMenuItem>
               <DropdownMenuItem
-                disabled={
-                  !task || !['spec', 'plan', 'ralph'].includes(task.status)
-                }
-                onClick={handleSprintPlanner}
+                disabled={!task || task.status !== 'ready'}
+                onClick={handleStart}
               >
-                Sprint Planner
+                <Play className="mr-2 h-4 w-4" />
+                Start
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={
+                  !task ||
+                  task.status !== 'ready' ||
+                  (task.has_spec && task.has_children)
+                }
+                onClick={handleMakeRalphReady}
+              >
+                Make Ralph Ready
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!task || !['ready', 'ralph'].includes(task.status)}
+                onClick={handleRalphSession}
+              >
+                Ralph Session
               </DropdownMenuItem>
               <DropdownMenuItem disabled={!projectId} onClick={handleEdit}>
                 {t('common:buttons.edit')}
