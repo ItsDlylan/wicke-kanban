@@ -75,6 +75,7 @@ export type KanbanCardProps = Pick<Feature, 'id' | 'name'> & {
   onKeyDown?: (e: KeyboardEvent) => void;
   isOpen?: boolean;
   dragDisabled?: boolean;
+  stacked?: boolean;
 };
 
 export const KanbanCard = ({
@@ -90,6 +91,7 @@ export const KanbanCard = ({
   onKeyDown,
   isOpen,
   dragDisabled = false,
+  stacked = false,
 }: KanbanCardProps) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -109,7 +111,11 @@ export const KanbanCard = ({
     }
   };
 
-  return (
+  const dragTransform = transform
+    ? `translateX(${transform.x}px) translateY(${transform.y}px)`
+    : undefined;
+
+  const card = (
     <Card
       className={cn(
         'p-3 outline-none border-b flex-col space-y-2',
@@ -125,13 +131,40 @@ export const KanbanCard = ({
       onKeyDown={onKeyDown}
       style={{
         zIndex: isDragging ? 1000 : 1,
-        transform: transform
-          ? `translateX(${transform.x}px) translateY(${transform.y}px)`
-          : 'none',
+        transform: dragTransform ?? 'none',
       }}
     >
       {children ?? <p className="m-0 font-medium text-sm">{name}</p>}
     </Card>
+  );
+
+  if (!stacked) return card;
+
+  return (
+    <div className="relative mb-1.5">
+      {/* Bottom trail layer — most lag during drag */}
+      <div
+        className="absolute inset-0 rounded-lg border border-border bg-card pointer-events-none"
+        style={{
+          transform: isDragging ? dragTransform : 'translate(4px, 6px)',
+          transition: isDragging ? 'transform 280ms ease-out' : 'none',
+          opacity: isDragging ? 0.4 : 0.5,
+        }}
+      />
+      {/* Middle trail layer */}
+      <div
+        className="absolute inset-0 rounded-lg border border-border bg-card pointer-events-none"
+        style={{
+          transform: isDragging ? dragTransform : 'translate(2px, 3px)',
+          transition: isDragging ? 'transform 150ms ease-out' : 'none',
+          opacity: isDragging ? 0.6 : 0.7,
+        }}
+      />
+      {/* Main card on top — relative + z-index ensures it layers above the trail divs */}
+      <div className="relative" style={{ zIndex: 2 }}>
+        {card}
+      </div>
+    </div>
   );
 };
 

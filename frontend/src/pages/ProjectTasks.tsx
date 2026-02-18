@@ -277,16 +277,13 @@ export function ProjectTasks() {
   const isTaskView = !!taskId && !effectiveAttemptId;
   const { data: attempt } = useTaskAttemptWithSession(effectiveAttemptId);
 
-  // While a Ralph loop is actively running, redirect attempt URLs to the task view
-  // so the user sees the children overview instead of a broken "Loading History..." panel.
-  // Once the task moves to QA, allow navigating to the attempt view for diffs/PR.
+  // Redirect attempt URLs to the task view for parent tasks with children.
+  // The orchestration workspace has no execution processes, so the attempt view
+  // shows "Loading History..." forever. The task view shows the children overview
+  // and a "View Diffs / Create PR" button for navigating to a specific attempt.
   useEffect(() => {
     if (!projectId || !taskId || !selectedTask) return;
-    if (
-      selectedTask.has_children &&
-      selectedTask.status === 'ralph' &&
-      (effectiveAttemptId || isLatest)
-    ) {
+    if (selectedTask.has_children && isLatest) {
       navigateWithSearch(paths.task(projectId, taskId), { replace: true });
     }
   }, [
@@ -395,6 +392,12 @@ export function ProjectTasks() {
         return;
       }
 
+      // Hide child tasks when parent is no longer in Ralph (they stack under the parent card)
+      if (task.parent_task_id) {
+        const parent = tasksById[task.parent_task_id];
+        if (parent && parent.status !== 'ralph') return;
+      }
+
       columns[statusKey].push(task);
     });
 
@@ -406,7 +409,21 @@ export function ProjectTasks() {
     });
 
     return columns;
-  }, [hasSearch, normalizedSearch, tasks]);
+  }, [hasSearch, normalizedSearch, tasks, tasksById]);
+
+  const childrenStats = useMemo(() => {
+    const stats: Record<string, { done: number; total: number }> = {};
+    tasks.forEach((task) => {
+      if (!task.parent_task_id) return;
+      const parent = tasksById[task.parent_task_id];
+      if (!parent || parent.status === 'ralph') return;
+      if (!stats[task.parent_task_id])
+        stats[task.parent_task_id] = { done: 0, total: 0 };
+      stats[task.parent_task_id].total++;
+      if (task.status === 'done') stats[task.parent_task_id].done++;
+    });
+    return stats;
+  }, [tasks, tasksById]);
 
   const visibleTasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = {
@@ -588,7 +605,7 @@ export function ProjectTasks() {
 
       if (attemptIdToShow) {
         navigateWithSearch(paths.attempt(projectId, task.id, attemptIdToShow));
-      } else if (task.status === 'ralph' && task.has_children) {
+      } else if (task.has_children) {
         navigateWithSearch(paths.task(projectId, task.id));
       } else {
         navigateWithSearch(`${paths.task(projectId, task.id)}/attempts/latest`);
@@ -778,6 +795,7 @@ export function ProjectTasks() {
           selectedTaskId={selectedTask?.id}
           onCreateTask={handleCreateNewTask}
           projectId={projectId!}
+          childrenStats={childrenStats}
         />
       </div>
     );
@@ -817,9 +835,7 @@ export function ProjectTasks() {
               ) : (
                 <BreadcrumbLink
                   className="cursor-pointer hover:underline"
-                  onClick={() =>
-                    navigateWithSearch(paths.task(projectId!, taskId!))
-                  }
+                  onClick={() => navigate(paths.task(projectId!, taskId!))}
                 >
                   {truncateTitle(selectedTask?.title)}
                 </BreadcrumbLink>

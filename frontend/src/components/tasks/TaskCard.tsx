@@ -19,6 +19,7 @@ interface TaskCardProps {
   onViewDetails: (task: Task) => void;
   isOpen?: boolean;
   projectId: string;
+  stackedCount?: { done: number; total: number };
 }
 
 export function TaskCard({
@@ -28,6 +29,7 @@ export function TaskCard({
   onViewDetails,
   isOpen,
   projectId,
+  stackedCount,
 }: TaskCardProps) {
   const { t } = useTranslation('tasks');
   const navigate = useNavigateWithSearch();
@@ -74,7 +76,7 @@ export function TaskCard({
     });
   }, [isOpen]);
 
-  return (
+  const card = (
     <KanbanCard
       key={task.id}
       id={task.id}
@@ -84,6 +86,7 @@ export function TaskCard({
       onClick={handleClick}
       isOpen={isOpen}
       forwardedRef={localRef}
+      stacked={task.has_children}
     >
       <div className="flex flex-col gap-2">
         <TaskCardHeader
@@ -111,6 +114,14 @@ export function TaskCard({
                   className="text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-1 rounded"
                 >
                   R
+                </span>
+              )}
+              {stackedCount && (
+                <span
+                  className="text-[10px] font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 px-1 rounded"
+                  title={`${stackedCount.done}/${stackedCount.total} stories complete`}
+                >
+                  {stackedCount.done}/{stackedCount.total}
                 </span>
               )}
               {task.has_in_progress_attempt && (
@@ -145,4 +156,6 @@ export function TaskCard({
       </div>
     </KanbanCard>
   );
+
+  return card;
 }
