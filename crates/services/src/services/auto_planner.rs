@@ -18,6 +18,32 @@ pub enum AutoPlannerError {
     NoRepos(Uuid),
 }
 
+/// Recover tasks whose plan_status is stuck at "generating" (e.g. from a server restart)
+/// by resetting them to "pending" and re-spawning plan generation.
+pub async fn recover_stuck_plans(pool: &SqlitePool) {
+    match Task::reset_stuck_generating_plans(pool).await {
+        Ok(tasks) if !tasks.is_empty() => {
+            tracing::info!(
+                "Recovering {} task(s) with stuck 'generating' plan_status",
+                tasks.len()
+            );
+            for task in tasks {
+                spawn_auto_plan(
+                    pool.clone(),
+                    task.id,
+                    task.project_id,
+                    task.title,
+                    task.description,
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::error!("Failed to recover stuck generating plans: {}", e);
+        }
+    }
+}
+
 /// Build a prompt that instructs Claude to analyze the codebase and produce a step-by-step
 /// implementation plan from a task's title and description.
 pub fn build_auto_plan_prompt(title: &str, description: Option<&str>) -> String {

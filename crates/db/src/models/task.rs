@@ -520,6 +520,32 @@ ORDER BY t.created_at DESC"#,
         Ok(())
     }
 
+    /// Find and reset any tasks stuck in 'generating' plan_status back to 'pending'.
+    /// Returns the tasks that were reset so callers can re-trigger plan generation.
+    pub async fn reset_stuck_generating_plans(pool: &SqlitePool) -> Result<Vec<Task>, sqlx::Error> {
+        let tasks = sqlx::query_as!(
+            Task,
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description,
+                      status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid",
+                      parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32",
+                      plan, plan_status, created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM tasks WHERE plan_status = 'generating'"#
+        )
+        .fetch_all(pool)
+        .await?;
+
+        if !tasks.is_empty() {
+            sqlx::query!(
+                "UPDATE tasks SET plan_status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE plan_status = 'generating'"
+            )
+            .execute(pool)
+            .await?;
+        }
+
+        Ok(tasks)
+    }
+
     /// Count children tasks and how many are done.
     pub async fn count_children(
         pool: &SqlitePool,

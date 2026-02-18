@@ -1,7 +1,7 @@
 use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
 use server::{DeploymentImpl, routes};
-use services::services::container::ContainerService;
+use services::services::{auto_planner, container::ContainerService};
 use sqlx::Error as SqlxError;
 use strip_ansi_escapes::strip;
 use thiserror::Error;
@@ -67,6 +67,7 @@ async fn main() -> Result<(), WickebanError> {
         .backfill_repo_names()
         .await
         .map_err(DeploymentError::from)?;
+    auto_planner::recover_stuck_plans(&deployment.db().pool).await;
     deployment
         .track_if_analytics_allowed("session_start", serde_json::json!({}))
         .await;

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE tasks SET plan_status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE plan_status = 'generating'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "0f30841b811cb8a1300092dc78dd2a4640eb97cd7e890597cc8b8f617496c56e"
+}
