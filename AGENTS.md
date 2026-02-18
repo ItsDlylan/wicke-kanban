@@ -45,19 +45,29 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 
 ## Worktree Workflow (Isolation Tiers)
 
+**Rule: When you are a teammate agent assigned a task, you MUST use `/tier2` to create an isolated worktree before writing any code.** Only skip this for read-only tasks (code review, documentation, research). Default to Tier 2 for any task that modifies code — feature work, bug fixes, refactors, migrations.
+
 Use git worktrees to isolate development environments. Each worktree gets its own branch, database, ports, and dependencies.
 
-### Tier 1 — Shared Environment (Default)
-- **Use for:** code review, docs, reading, simple refactors
+### Teammate Workflow
+1. Receive task assignment
+2. Run `/tier2` to create an isolated worktree (you'll be asked for a branch name)
+3. `cd` into the worktree directory
+4. Do the work
+5. Commit and push from the worktree
+6. Report back to team lead
+
+### Tier 1 — Shared Environment
+- **Use for:** code review, docs, reading, research — **read-only tasks only**
 - **Database:** shared `dev_assets/db.sqlite`
 - **URL:** `http://localhost:<port>` (from main `.dev-ports.json`)
 - **Setup:** none needed — work directly in the main checkout
 
-### Tier 2 — Isolated Worktree + Database
-- **Use for:** feature development, database migrations, testing with data
+### Tier 2 — Isolated Worktree + Database (Default for Code Changes)
+- **Use for:** feature development, bug fixes, refactors, database migrations, testing with data
 - **Database:** own `dev_assets/db.sqlite` (copied from `dev_assets_seed/`)
 - **URL:** `http://localhost:<unique-port>` (auto-allocated)
-- **Creation:** `bin/worktree create feature/my-feature`
+- **Creation:** run `/tier2` or `bin/worktree create feature/my-feature`
 
 ### Tier 3 — Worktree with Shared Database
 - **Use for:** frontend-only changes, CSS/Tailwind, React components
@@ -66,7 +76,7 @@ Use git worktrees to isolate development environments. Each worktree gets its ow
 - **Creation:** `bin/worktree create feature/ui-update --no-db`
 
 ### Decision Checklist
-1. Does the task touch the database or migrations? → **Tier 2**
+1. Does the task modify any code? → **Tier 2** (default)
 2. Is it frontend-only with no data concerns? → **Tier 3**
 3. Is it a quick read/review/doc change? → **Tier 1**
 
