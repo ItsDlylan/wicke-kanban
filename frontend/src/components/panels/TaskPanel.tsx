@@ -10,7 +10,7 @@ import type { TaskWithAttemptStatus, ChildTaskWithDeps } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
-import { PlusIcon } from 'lucide-react';
+import { ExternalLink, GitBranch, PlusIcon } from 'lucide-react';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -184,6 +184,38 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                     : 'Stories'
                 }
               />
+            )}
+
+            {task.has_children && displayedAttempts.length > 0 && (
+              <div className="border rounded-md p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                    {displayedAttempts[0].branch}
+                  </code>
+                </div>
+                {task.status !== 'ralph' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      if (projectId) {
+                        navigate(
+                          paths.attempt(
+                            projectId,
+                            task.id,
+                            displayedAttempts[0].id
+                          )
+                        );
+                      }
+                    }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                    View Diffs / Create PR
+                  </Button>
+                )}
+              </div>
             )}
 
             {task.parent_workspace_id && (

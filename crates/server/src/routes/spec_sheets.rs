@@ -380,6 +380,12 @@ pub async fn start_sprint(
     // 6. Create container
     deployment.container().create(&ws).await?;
 
+    // Auto-create a draft PR so diffs accumulate as each story pushes
+    deployment
+        .container()
+        .auto_create_pr(&ws, &task, true)
+        .await;
+
     // 7. Assign selected children to this sprint workspace
     for tid in &payload.task_ids {
         Task::update_parent_workspace_id(pool, *tid, Some(ws.id)).await?;
@@ -609,6 +615,15 @@ pub async fn create_ralph_session(
 
     // Create container
     deployment.container().create(&ws).await?;
+
+    // Auto-create a draft PR so diffs accumulate as each story pushes
+    let first_task = Task::find_by_id(pool, first_task_id)
+        .await?
+        .ok_or(ApiError::Database(sqlx::Error::RowNotFound))?;
+    deployment
+        .container()
+        .auto_create_pr(&ws, &first_task, true)
+        .await;
 
     // Update session with workspace
     RalphSession::update_workspace_id(pool, session_id, ws.id).await?;

@@ -228,10 +228,11 @@ pub trait ContainerService {
         action.next_action.is_none()
     }
 
-    /// Best-effort auto-create PR for a workspace after Ralph loop completion.
+    /// Best-effort auto-create PR for a workspace.
     /// Pushes branch to remote, creates PR via git host, and stores the PR in the database.
+    /// When `draft` is true, creates a draft PR (used at Ralph session start).
     /// Logs errors but does not fail — this is best-effort.
-    async fn auto_create_pr(&self, workspace: &Workspace, task: &Task) {
+    async fn auto_create_pr(&self, workspace: &Workspace, task: &Task, draft: bool) {
         let pool = &self.db().pool;
 
         let workspace_repos =
@@ -308,7 +309,7 @@ pub trait ContainerService {
                 body: None,
                 head_branch: workspace.branch.clone(),
                 base_branch: base_branch.clone(),
-                draft: Some(false),
+                draft: Some(draft),
                 head_repo_url: Some(push_remote.url.clone()),
             };
 
@@ -444,9 +445,6 @@ pub trait ContainerService {
                         )
                         .await
                         {
-                            Ok(super::ralph_loop::AdvanceResult::AllComplete) => {
-                                self.auto_create_pr(&parent_workspace, &parent_task).await;
-                            }
                             Ok(_) => {}
                             Err(e) => {
                                 tracing::error!("Failed to advance Ralph loop: {e}");

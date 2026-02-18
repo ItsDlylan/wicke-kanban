@@ -277,11 +277,16 @@ export function ProjectTasks() {
   const isTaskView = !!taskId && !effectiveAttemptId;
   const { data: attempt } = useTaskAttemptWithSession(effectiveAttemptId);
 
-  // Ralph parent tasks (has_children) should always show task view, not attempt view.
-  // Redirect from any attempt URL back to the task view.
+  // While a Ralph loop is actively running, redirect attempt URLs to the task view
+  // so the user sees the children overview instead of a broken "Loading History..." panel.
+  // Once the task moves to QA, allow navigating to the attempt view for diffs/PR.
   useEffect(() => {
     if (!projectId || !taskId || !selectedTask) return;
-    if (selectedTask.has_children && (effectiveAttemptId || isLatest)) {
+    if (
+      selectedTask.has_children &&
+      selectedTask.status === 'ralph' &&
+      (effectiveAttemptId || isLatest)
+    ) {
       navigateWithSearch(paths.task(projectId, taskId), { replace: true });
     }
   }, [
@@ -583,7 +588,7 @@ export function ProjectTasks() {
 
       if (attemptIdToShow) {
         navigateWithSearch(paths.attempt(projectId, task.id, attemptIdToShow));
-      } else if (task.status === 'ralph') {
+      } else if (task.status === 'ralph' && task.has_children) {
         navigateWithSearch(paths.task(projectId, task.id));
       } else {
         navigateWithSearch(`${paths.task(projectId, task.id)}/attempts/latest`);
