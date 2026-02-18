@@ -19,7 +19,6 @@ import {
   AgentSettings,
   GeneralSettings,
   McpSettings,
-  OrganizationSettings,
   ProjectSettings,
   ReposSettings,
   SettingsLayout,
@@ -110,10 +109,6 @@ function AppContent() {
                 <Route path="general" element={<GeneralSettings />} />
                 <Route path="projects" element={<ProjectSettings />} />
                 <Route path="repos" element={<ReposSettings />} />
-                <Route
-                  path="organizations"
-                  element={<OrganizationSettings />}
-                />
                 <Route path="agents" element={<AgentSettings />} />
                 <Route path="mcp" element={<McpSettings />} />
               </Route>

@@ -3,7 +3,6 @@ import { XIcon } from '@phosphor-icons/react';
 
 import { GeneralSettingsSectionContent } from './GeneralSettingsSection';
 import { ReposSettingsSectionContent } from './ReposSettingsSection';
-import { OrganizationsSettingsSectionContent } from './OrganizationsSettingsSection';
 import { RemoteProjectsSettingsSectionContent } from './RemoteProjectsSettingsSection';
 import { AgentsSettingsSectionContent } from './AgentsSettingsSection';
 import { McpSettingsSectionContent } from './McpSettingsSection';
@@ -11,7 +10,6 @@ import { McpSettingsSectionContent } from './McpSettingsSection';
 export type SettingsSectionType =
   | 'general'
   | 'repos'
-  | 'organizations'
   | 'remote-projects'
   | 'agents'
   | 'mcp';
@@ -20,7 +18,6 @@ export type SettingsSectionType =
 export type SettingsSectionInitialState = {
   general: undefined;
   repos: { repoId?: string } | undefined;
-  organizations: { organizationId?: string } | undefined;
   'remote-projects':
     | { organizationId?: string; projectId?: string }
     | undefined;
@@ -51,8 +48,6 @@ export function SettingsSection({
             initialState={initialState as SettingsSectionInitialState['repos']}
           />
         );
-      case 'organizations':
-        return <OrganizationsSettingsSectionContent />;
       case 'remote-projects':
         return (
           <RemoteProjectsSettingsSectionContent

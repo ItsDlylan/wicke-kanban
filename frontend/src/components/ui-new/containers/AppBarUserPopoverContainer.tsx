@@ -46,7 +46,7 @@ export function AppBarUserPopoverContainer({
 
   const handleOrgSettings = async (orgId: string) => {
     setSelectedOrgId(orgId);
-    await SettingsDialog.show({ initialSection: 'organizations' });
+    await SettingsDialog.show({ initialSection: 'general' });
   };
 
   const handleMigrate = () => {
