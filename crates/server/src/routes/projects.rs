@@ -12,6 +12,7 @@ use axum::{
     response::{IntoResponse, Json as ResponseJson},
     routing::{get, post},
 };
+use chrono::{DateTime, Utc};
 use db::models::{
     project::{CreateProject, Project, ProjectError, SearchResult, UpdateProject},
     project_repo::{CreateProjectRepo, ProjectRepo},
@@ -19,11 +20,29 @@ use db::models::{
 };
 use deployment::Deployment;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
+use serde::Serialize;
 use services::services::{file_search::SearchQuery, project::ProjectServiceError};
+use ts_rs::TS;
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError, middleware::load_project_middleware};
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ProjectStats {
+    pub project_id: Uuid,
+    pub commits_this_month: u32,
+    pub lines_added_this_month: u32,
+    pub lines_removed_this_month: u32,
+    pub last_commit_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct AllProjectStats {
+    pub stats: Vec<ProjectStats>,
+}
 
 pub async fn get_projects(
     State(deployment): State<DeploymentImpl>,
@@ -433,6 +452,84 @@ pub async fn get_project_repository(
     }
 }
 
+pub async fn get_all_project_stats(
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<AllProjectStats>>, ApiError> {
+    let projects = Project::find_all(&deployment.db().pool).await?;
+    let git = deployment.git().clone();
+    let pool = deployment.db().pool.clone();
+
+    let stats = tokio::task::spawn_blocking(move || {
+        let mut result: Vec<ProjectStats> = Vec::new();
+
+        for project in &projects {
+            let repos = tokio::runtime::Handle::current()
+                .block_on(ProjectRepo::find_repos_for_project(&pool, project.id));
+
+            let repos = match repos {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("Failed to get repos for project {}: {}", project.id, e);
+                    result.push(ProjectStats {
+                        project_id: project.id,
+                        commits_this_month: 0,
+                        lines_added_this_month: 0,
+                        lines_removed_this_month: 0,
+                        last_commit_date: None,
+                    });
+                    continue;
+                }
+            };
+
+            let mut total_commits: u32 = 0;
+            let mut total_added: u32 = 0;
+            let mut total_removed: u32 = 0;
+            let mut latest_date: Option<DateTime<Utc>> = None;
+
+            for repo in &repos {
+                let path = std::path::PathBuf::from(&repo.path);
+                match git.collect_monthly_stats(&path) {
+                    Ok((commits, added, removed, last_date)) => {
+                        total_commits += commits;
+                        total_added += added;
+                        total_removed += removed;
+                        if let Some(d) = last_date {
+                            latest_date = Some(match latest_date {
+                                Some(existing) if existing > d => existing,
+                                _ => d,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to collect stats for repo {} ({}): {}",
+                            repo.display_name,
+                            repo.path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+
+            result.push(ProjectStats {
+                project_id: project.id,
+                commits_this_month: total_commits,
+                lines_added_this_month: total_added,
+                lines_removed_this_month: total_removed,
+                last_commit_date: latest_date,
+            });
+        }
+
+        result
+    })
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("Stats computation failed: {}", e)))?;
+
+    Ok(ResponseJson(ApiResponse::success(AllProjectStats {
+        stats,
+    })))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let project_id_router = Router::new()
         .route(
@@ -452,6 +549,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     let projects_router = Router::new()
         .route("/", get(get_projects).post(create_project))
+        .route("/stats", get(get_all_project_stats))
         .route(
             "/{project_id}/repositories/{repo_id}",
             get(get_project_repository).delete(delete_project_repository),

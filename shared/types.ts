@@ -196,8 +196,6 @@ export type DiffChangeKind = "added" | "deleted" | "modified" | "renamed" | "cop
 
 export type ApiResponse<T, E = T> = { success: boolean, data: T | null, error_data: E | null, message: string | null, };
 
-export type LoginStatus = { "status": "loggedout" } | { "status": "loggedin", profile: ProfileResponse, };
-
 export type ProfileResponse = { user_id: string, username: string | null, email: string, providers: Array<ProviderProfile>, };
 
 export type ProviderProfile = { provider: string, username: string | null, display_name: string | null, email: string | null, avatar_url: string | null, };
@@ -246,13 +244,17 @@ export type UpdateMemberRoleRequest = { role: MemberRole, };
 
 export type UpdateMemberRoleResponse = { user_id: string, role: MemberRole, };
 
+export type ProjectStats = { project_id: string, commits_this_month: number, lines_added_this_month: number, lines_removed_this_month: number, last_commit_date: string | null, };
+
+export type AllProjectStats = { stats: Array<ProjectStats>, };
+
 export type RegisterRepoRequest = { path: string, display_name: string | null, };
 
 export type InitRepoRequest = { parent_path: string, folder_name: string, };
 
 export type TagSearchParams = { search: string | null, };
 
-export type UserSystemInfo = { config: Config, analytics_user_id: string, login_status: LoginStatus, environment: Environment, 
+export type UserSystemInfo = { config: Config, analytics_user_id: string, environment: Environment, 
 /**
  * Capabilities supported per executor (e.g., { "CLAUDE_CODE": ["SESSION_FORK"] })
  */

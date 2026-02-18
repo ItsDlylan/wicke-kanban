@@ -11,11 +11,13 @@ import { AlertCircle, Loader2, Plus } from 'lucide-react';
 import ProjectCard from '@/components/projects/ProjectCard.tsx';
 import { useKeyCreate, Scope } from '@/keyboard';
 import { useProjects } from '@/hooks/useProjects';
+import { useAllProjectStats } from '@/hooks/useProjectStats';
 
 export function ProjectList() {
   const navigate = useNavigate();
   const { t } = useTranslation('projects');
   const { projects, isLoading, error: projectsError } = useProjects();
+  const { statsMap } = useAllProjectStats();
   const [error, setError] = useState('');
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
 
@@ -96,6 +98,7 @@ export function ProjectList() {
             <ProjectCard
               key={project.id}
               project={project}
+              stats={statsMap.get(project.id)}
               isFocused={focusedProjectId === project.id}
               setError={setError}
               onEdit={handleEditProject}

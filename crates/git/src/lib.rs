@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use git2::{
     BranchType, Delta, DiffFindOptions, DiffOptions, Error as GitError, Reference, Remote,
     Repository, Sort,
@@ -1886,6 +1886,71 @@ impl GitService {
         );
 
         Ok(repo)
+    }
+
+    /// Collect monthly commit/line stats for a repo (commits this month, lines added, lines removed, last commit date)
+    pub fn collect_monthly_stats(
+        &self,
+        repo_path: &Path,
+    ) -> Result<(u32, u32, u32, Option<DateTime<Utc>>), GitServiceError> {
+        let repo = self.open_repo(repo_path)?;
+
+        let mut revwalk = repo.revwalk().map_err(GitServiceError::Git)?;
+        if revwalk.push_head().is_err() {
+            // Empty repo or no HEAD — return zeros
+            return Ok((0, 0, 0, None));
+        }
+        revwalk.set_sorting(Sort::TIME)?;
+
+        let now = Utc::now();
+        let month_start = now
+            .date_naive()
+            .with_day(1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+
+        let mut commits: u32 = 0;
+        let mut additions: u32 = 0;
+        let mut deletions: u32 = 0;
+        let mut last_commit_date: Option<DateTime<Utc>> = None;
+
+        for oid_result in revwalk {
+            let oid = oid_result?;
+            let commit = repo.find_commit(oid)?;
+
+            let commit_time = {
+                let time = commit.time();
+                DateTime::from_timestamp(time.seconds(), 0).unwrap_or_else(Utc::now)
+            };
+
+            // Track the most recent commit regardless of month
+            if last_commit_date.is_none() {
+                last_commit_date = Some(commit_time);
+            }
+
+            // Stop walking once we're past the current month
+            if commit_time < month_start {
+                break;
+            }
+
+            commits += 1;
+
+            let commit_tree = commit.tree()?;
+            let parent_tree = if commit.parent_count() == 0 {
+                None
+            } else {
+                Some(commit.parent(0)?.tree()?)
+            };
+
+            let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)?;
+            let stats = diff.stats()?;
+            additions += stats.insertions() as u32;
+            deletions += stats.deletions() as u32;
+        }
+
+        Ok((commits, additions, deletions, last_commit_date))
     }
 
     /// Collect file statistics from recent commits for ranking purposes

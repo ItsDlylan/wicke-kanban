@@ -53,7 +53,6 @@ import {
   RunAgentSetupResponse,
   GhCliSetupError,
   RunScriptError,
-  StatusResponse,
   ListOrganizationsResponse,
   OrganizationMemberWithProfile,
   ListMembersResponse,
@@ -74,8 +73,6 @@ import {
   CreateScratch,
   UpdateScratch,
   PushError,
-  TokenResponse,
-  CurrentUserResponse,
   QueueStatus,
   PrCommentsResponse,
   MergeTaskAttemptRequest,
@@ -105,6 +102,7 @@ import {
   RalphSessionResponse,
   CreateRalphSessionRequest,
   GenerateSpecResponse,
+  AllProjectStats,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -337,6 +335,11 @@ export const projectsApi = {
       }
     );
     return handleApiResponse<void>(response);
+  },
+
+  getStats: async (): Promise<AllProjectStats> => {
+    const response = await makeRequest('/api/projects/stats');
+    return handleApiResponse<AllProjectStats>(response);
   },
 };
 
@@ -1336,67 +1339,6 @@ export const approvalsApi = {
     return handleApiResponse<ApprovalStatus>(res);
   },
 };
-
-// OAuth API
-export const oauthApi = {
-  handoffInit: async (
-    provider: string,
-    returnTo: string
-  ): Promise<{ handoff_id: string; authorize_url: string }> => {
-    const response = await makeRequest('/api/auth/handoff/init', {
-      method: 'POST',
-      body: JSON.stringify({ provider, return_to: returnTo }),
-    });
-    return handleApiResponse<{ handoff_id: string; authorize_url: string }>(
-      response
-    );
-  },
-
-  status: async (): Promise<StatusResponse> => {
-    const response = await makeRequest('/api/auth/status', {
-      cache: 'no-store',
-    });
-    return handleApiResponse<StatusResponse>(response);
-  },
-
-  logout: async (): Promise<void> => {
-    const response = await makeRequest('/api/auth/logout', {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      throw new ApiError(
-        `Logout failed with status ${response.status}`,
-        response.status,
-        response
-      );
-    }
-  },
-
-  /** Returns the current access token for the remote server (auto-refreshes if needed) */
-  getToken: async (): Promise<TokenResponse | null> => {
-    const response = await makeRequest('/api/auth/token');
-    if (response.status === 401) {
-      throw new ApiError('Unauthorized', 401, response);
-    }
-    if (!response.ok) return null;
-    return handleApiResponse<TokenResponse>(response);
-  },
-
-  /** Returns the user ID of the currently authenticated user */
-  getCurrentUser: async (): Promise<CurrentUserResponse> => {
-    const response = await makeRequest('/api/auth/user');
-    return handleApiResponse<CurrentUserResponse>(response);
-  },
-};
-
-/**
- * @deprecated Use `tokenManager.getToken()` from '@/lib/auth/tokenManager' instead.
- * This function does not handle 401 responses or token refresh coordination.
- */
-export async function getCachedToken(): Promise<string | null> {
-  const { tokenManager } = await import('./auth/tokenManager');
-  return tokenManager.getToken();
-}
 
 // Organizations API
 export const organizationsApi = {
