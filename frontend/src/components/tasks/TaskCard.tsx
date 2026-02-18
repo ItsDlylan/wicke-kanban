@@ -105,6 +105,14 @@ export function TaskCard({
                   <XCircle className="h-3.5 w-3.5 text-red-500" />
                 </span>
               )}
+              {task.has_spec && task.has_children && (
+                <span
+                  title="Ralph Ready"
+                  className="text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-1 rounded"
+                >
+                  R
+                </span>
+              )}
               {task.has_in_progress_attempt && (
                 <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
               )}

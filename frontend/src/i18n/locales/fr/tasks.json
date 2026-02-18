@@ -637,9 +637,12 @@
     "descriptionPlaceholder": "Ajouter plus de détails (optionnel). Tapez @ pour rechercher des fichiers.",
     "statusLabel": "Statut",
     "statusOptions": {
-      "todo": "À faire",
+      "backlog": "Backlog",
+      "plangenerating": "Plan en cours",
+      "ready": "Prêt",
+      "ralph": "Ralph",
       "inprogress": "En cours",
-      "inreview": "En révision",
+      "qa": "Q/A",
       "done": "Terminé",
       "cancelled": "Annulé"
     },

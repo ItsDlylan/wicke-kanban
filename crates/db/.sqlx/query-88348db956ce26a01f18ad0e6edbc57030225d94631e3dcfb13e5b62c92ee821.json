@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO ralph_session_tasks (ralph_session_id, task_id, execution_order)\n                 VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "88348db956ce26a01f18ad0e6edbc57030225d94631e3dcfb13e5b62c92ee821"
+}

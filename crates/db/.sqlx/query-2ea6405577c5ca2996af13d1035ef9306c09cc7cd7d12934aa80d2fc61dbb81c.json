@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT rst.ralph_session_id as \"ralph_session_id!: Uuid\",\n                      rst.task_id as \"task_id!: Uuid\",\n                      rst.execution_order as \"execution_order!: i32\"\n               FROM ralph_session_tasks rst\n               JOIN tasks t ON t.id = rst.task_id\n               WHERE rst.ralph_session_id = $1\n                 AND t.status NOT IN ('done', 'qa', 'cancelled')\n               ORDER BY rst.execution_order ASC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "ralph_session_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "execution_order!: i32",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2ea6405577c5ca2996af13d1035ef9306c09cc7cd7d12934aa80d2fc61dbb81c"
+}

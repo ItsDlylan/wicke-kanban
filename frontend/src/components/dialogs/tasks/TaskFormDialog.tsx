@@ -142,7 +142,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         return {
           title: props.initialTask.title,
           description: props.initialTask.description || '',
-          status: 'todo',
+          status: 'backlog',
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
@@ -154,7 +154,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         return {
           title: '',
           description: '',
-          status: 'todo',
+          status: 'backlog',
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
@@ -482,20 +482,26 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                       <SelectItem value="backlog">
                         {t('taskFormDialog.statusOptions.backlog', 'Backlog')}
                       </SelectItem>
-                      <SelectItem value="todo">
-                        {t('taskFormDialog.statusOptions.todo')}
+                      <SelectItem value="plangenerating">
+                        {t(
+                          'taskFormDialog.statusOptions.plangenerating',
+                          'Plan Generating'
+                        )}
                       </SelectItem>
-                      <SelectItem value="spec">
-                        {t('taskFormDialog.statusOptions.spec', 'Spec')}
-                      </SelectItem>
-                      <SelectItem value="plan">
-                        {t('taskFormDialog.statusOptions.plan', 'Plan')}
+                      <SelectItem value="ready">
+                        {t('taskFormDialog.statusOptions.ready', 'Ready')}
                       </SelectItem>
                       <SelectItem value="ralph">
                         {t('taskFormDialog.statusOptions.ralph', 'Ralph')}
                       </SelectItem>
-                      <SelectItem value="inreview">
-                        {t('taskFormDialog.statusOptions.inreview')}
+                      <SelectItem value="inprogress">
+                        {t(
+                          'taskFormDialog.statusOptions.inprogress',
+                          'In Progress'
+                        )}
+                      </SelectItem>
+                      <SelectItem value="qa">
+                        {t('taskFormDialog.statusOptions.qa', 'Q/A')}
                       </SelectItem>
                       <SelectItem value="done">
                         {t('taskFormDialog.statusOptions.done')}

@@ -560,9 +560,12 @@
     "descriptionPlaceholder": "新增更多細節（選填）。輸入 @ 搜尋檔案。",
     "statusLabel": "狀態",
     "statusOptions": {
-      "todo": "待辦",
+      "backlog": "待辦",
+      "plangenerating": "計劃生成中",
+      "ready": "就緒",
+      "ralph": "Ralph",
       "inprogress": "進行中",
-      "inreview": "審查中",
+      "qa": "Q/A",
       "done": "完成",
       "cancelled": "已取消"
     },

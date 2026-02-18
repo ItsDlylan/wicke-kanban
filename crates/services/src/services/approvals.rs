@@ -177,7 +177,7 @@ impl Approvals {
                 ApprovalStatus::Approved | ApprovalStatus::Denied { .. }
             ) && let Ok(ctx) =
                 ExecutionProcess::load_context(pool, tool_ctx.execution_process_id).await
-                && ctx.task.status == TaskStatus::InReview
+                && ctx.task.status == TaskStatus::QA
                 && let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::Ralph).await
             {
                 tracing::warn!(
@@ -316,7 +316,7 @@ impl Approvals {
 pub(crate) async fn ensure_task_in_review(pool: &SqlitePool, execution_process_id: Uuid) {
     if let Ok(ctx) = ExecutionProcess::load_context(pool, execution_process_id).await
         && ctx.task.status == TaskStatus::Ralph
-        && let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::InReview).await
+        && let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::QA).await
     {
         tracing::warn!(
             "Failed to update task status to InReview for approval request: {}",

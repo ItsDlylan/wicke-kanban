@@ -10,6 +10,17 @@ use uuid::Uuid;
 
 use crate::services::container::ContainerService;
 
+/// Result of advancing the Ralph loop after a child task completes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdvanceResult {
+    /// A new child task was started.
+    NextChildStarted,
+    /// All children are complete; the parent loop is finished.
+    AllComplete,
+    /// No eligible children but not all done — possible dependency deadlock.
+    Deadlocked,
+}
+
 #[derive(Debug, Error)]
 pub enum RalphLoopError {
     #[error(transparent)]
@@ -58,11 +69,8 @@ pub fn build_ralph_prompt(plan: &str, task_title: &str) -> String {
 /// Advances a task to the Ralph status, indicating execution has started.
 pub async fn start_ralph_loop(pool: &SqlitePool, task_id: Uuid) -> Result<(), sqlx::Error> {
     if let Some(task) = Task::find_by_id(pool, task_id).await? {
-        // Allow starting from Spec, Plan, or Ralph (multi-sprint: already in Ralph is fine)
-        if task.status == TaskStatus::Plan
-            || task.status == TaskStatus::Spec
-            || task.status == TaskStatus::Ralph
-        {
+        // Allow starting from Ready or Ralph (multi-sprint: already in Ralph is fine)
+        if task.status == TaskStatus::Ready || task.status == TaskStatus::Ralph {
             Task::update_status(pool, task_id, TaskStatus::Ralph).await?;
         }
     }
@@ -87,11 +95,11 @@ pub async fn find_shared_ralph_workspace(
     Ok(None)
 }
 
-/// Advances a task from Ralph to InReview, indicating execution is complete.
+/// Advances a task from Ralph to QA, indicating execution is complete.
 pub async fn complete_ralph_loop(pool: &SqlitePool, task_id: Uuid) -> Result<(), sqlx::Error> {
     if let Some(task) = Task::find_by_id(pool, task_id).await? {
         if task.status == TaskStatus::Ralph {
-            Task::update_status(pool, task_id, TaskStatus::InReview).await?;
+            Task::update_status(pool, task_id, TaskStatus::QA).await?;
         }
     }
     Ok(())
@@ -105,7 +113,7 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
     child_task: &Task,
     executor_profile_id: &ExecutorProfileId,
     repos: &[WorkspaceRepoInput],
-) -> Result<(), RalphLoopError> {
+) -> Result<AdvanceResult, RalphLoopError> {
     let parent_workspace_id = child_task
         .parent_workspace_id
         .ok_or(RalphLoopError::ParentWorkspaceNotFound)?;
@@ -125,7 +133,7 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
             parent_task.id,
             parent_task.status
         );
-        return Ok(());
+        return Ok(AdvanceResult::NextChildStarted);
     }
 
     // Mark the completed child as Done
@@ -155,6 +163,7 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
             repos,
         )
         .await?;
+        Ok(AdvanceResult::NextChildStarted)
     } else if Task::all_children_done(pool, parent_workspace_id).await? {
         // This sprint's children are all done. Check if ALL children of the parent
         // (across all sprints) are done before completing.
@@ -164,23 +173,24 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
                 parent_task.id
             );
             complete_ralph_loop(pool, parent_task.id).await?;
+            Ok(AdvanceResult::AllComplete)
         } else {
             tracing::info!(
                 "Sprint workspace {} done, but parent {} has other active sprints",
                 parent_workspace_id,
                 parent_task.id
             );
+            Ok(AdvanceResult::NextChildStarted)
         }
     } else {
         tracing::warn!(
             "No eligible children but not all done — possible dependency deadlock for parent task {}",
             parent_task.id
         );
-        // Mark parent as InReview so user can intervene
-        Task::update_status(pool, parent_task.id, TaskStatus::InReview).await?;
+        // Mark parent as QA so user can intervene
+        Task::update_status(pool, parent_task.id, TaskStatus::QA).await?;
+        Ok(AdvanceResult::Deadlocked)
     }
-
-    Ok(())
 }
 
 /// Start execution for a child task, reusing the parent's worktree.

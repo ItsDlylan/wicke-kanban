@@ -638,11 +638,11 @@
     "statusLabel": "Status",
     "statusOptions": {
       "backlog": "Backlog",
-      "todo": "To Do",
-      "spec": "Spec",
-      "plan": "Plan",
+      "plangenerating": "Plan Generating",
+      "ready": "Ready",
       "ralph": "Ralph",
-      "inreview": "In Review",
+      "inprogress": "In Progress",
+      "qa": "Q/A",
       "done": "Done",
       "cancelled": "Cancelled"
     },

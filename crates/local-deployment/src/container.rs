@@ -1323,16 +1323,15 @@ impl ContainerService for LocalContainerService {
             let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
         }
 
-        // Update task status to InReview when execution is stopped
+        // Update task status to QA when execution is stopped
         if let Ok(ctx) = ExecutionProcess::load_context(&self.db.pool, execution_process.id).await
             && !matches!(
                 ctx.execution_process.run_reason,
                 ExecutionProcessRunReason::DevServer
             )
-            && let Err(e) =
-                Task::update_status(&self.db.pool, ctx.task.id, TaskStatus::InReview).await
+            && let Err(e) = Task::update_status(&self.db.pool, ctx.task.id, TaskStatus::QA).await
         {
-            tracing::error!("Failed to update task status to InReview: {e}");
+            tracing::error!("Failed to update task status to QA: {e}");
         }
 
         tracing::debug!(

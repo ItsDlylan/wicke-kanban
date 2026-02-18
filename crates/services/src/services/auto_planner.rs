@@ -20,6 +20,7 @@ pub enum AutoPlannerError {
 
 /// Recover tasks whose plan_status is stuck at "generating" (e.g. from a server restart)
 /// by resetting them to "pending" and re-spawning plan generation.
+/// Also ensures these tasks have PlanGenerating status.
 pub async fn recover_stuck_plans(pool: &SqlitePool) {
     match Task::reset_stuck_generating_plans(pool).await {
         Ok(tasks) if !tasks.is_empty() => {
@@ -28,6 +29,10 @@ pub async fn recover_stuck_plans(pool: &SqlitePool) {
                 tasks.len()
             );
             for task in tasks {
+                // Ensure task is in PlanGenerating status
+                if task.status != TaskStatus::PlanGenerating {
+                    let _ = Task::update_status(pool, task.id, TaskStatus::PlanGenerating).await;
+                }
                 spawn_auto_plan(
                     pool.clone(),
                     task.id,
@@ -108,7 +113,7 @@ pub fn spawn_auto_plan(
     description: Option<String>,
 ) {
     tokio::spawn(async move {
-        // Set plan_status = "generating"
+        // Set plan_status = "generating" and task status to PlanGenerating
         if let Err(e) = Task::update_plan_status(&pool, task_id, "generating").await {
             tracing::error!(
                 "Failed to set plan_status to generating for task {}: {}",
@@ -116,6 +121,13 @@ pub fn spawn_auto_plan(
                 e
             );
             return;
+        }
+        if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::PlanGenerating).await {
+            tracing::error!(
+                "Failed to set task {} to PlanGenerating status: {}",
+                task_id,
+                e
+            );
         }
 
         // Get working directory from project repos
@@ -163,9 +175,9 @@ pub fn spawn_auto_plan(
                     tracing::error!("Failed to store plan for task {}: {}", task_id, e);
                     return;
                 }
-                if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Plan).await {
+                if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
                     tracing::error!(
-                        "Failed to transition task {} to Plan status: {}",
+                        "Failed to transition task {} to Ready status: {}",
                         task_id,
                         e
                     );

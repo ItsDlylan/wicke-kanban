@@ -560,9 +560,12 @@
     "descriptionPlaceholder": "添加更多详情（可选）。输入 @ 搜索文件。",
     "statusLabel": "状态",
     "statusOptions": {
-      "todo": "待办",
+      "backlog": "待办",
+      "plangenerating": "计划生成中",
+      "ready": "就绪",
+      "ralph": "Ralph",
       "inprogress": "进行中",
-      "inreview": "审查中",
+      "qa": "Q/A",
       "done": "完成",
       "cancelled": "已取消"
     },

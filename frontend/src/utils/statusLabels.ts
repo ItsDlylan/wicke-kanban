@@ -2,22 +2,22 @@ import { TaskStatus } from 'shared/types';
 
 export const statusLabels: Record<TaskStatus, string> = {
   backlog: 'Backlog',
-  todo: 'To Do',
-  spec: 'Spec',
-  plan: 'Plan',
+  plangenerating: 'Plan Generating',
+  ready: 'Ready',
   ralph: 'Ralph',
-  inreview: 'In Review',
+  inprogress: 'In Progress',
+  qa: 'Q/A',
   done: 'Done',
   cancelled: 'Cancelled',
 };
 
 export const statusBoardColors: Record<TaskStatus, string> = {
   backlog: '--neutral-foreground',
-  todo: '--neutral-foreground',
-  spec: '--info',
-  plan: '--info',
+  plangenerating: '--info',
+  ready: '--neutral-foreground',
   ralph: '--warning',
-  inreview: '--warning',
+  inprogress: '--warning',
+  qa: '--warning',
   done: '--success',
   cancelled: '--destructive',
 };

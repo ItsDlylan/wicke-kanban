@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
+import { useTaskChildren } from '@/hooks/useTaskChildren';
 import { useNavigateWithSearch } from '@/hooks';
 import { paths } from '@/lib/paths';
-import type { TaskWithAttemptStatus } from 'shared/types';
+import type { TaskWithAttemptStatus, ChildTaskWithDeps } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
@@ -12,9 +14,36 @@ import { PlusIcon } from 'lucide-react';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
+import { statusLabels } from '@/utils/statusLabels';
 
 interface TaskPanelProps {
   task: TaskWithAttemptStatus | null;
+}
+
+const statusBadgeColors: Record<string, string> = {
+  done: 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200',
+  inprogress: 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+  ralph: 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+  ready: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  backlog: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  qa: 'bg-yellow-200 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200',
+  cancelled: 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200',
+  plangenerating:
+    'bg-purple-200 text-purple-800 dark:bg-purple-800 dark:text-purple-200',
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const colors =
+    statusBadgeColors[status] ??
+    'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200';
+  const label = statusLabels[status as keyof typeof statusLabels] ?? status;
+  return (
+    <span
+      className={`px-1.5 py-0.5 text-xs rounded whitespace-nowrap ${colors}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 const TaskPanel = ({ task }: TaskPanelProps) => {
@@ -30,6 +59,16 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
 
   const { data: parentAttempt, isLoading: isParentLoading } =
     useTaskAttemptWithSession(task?.parent_workspace_id || undefined);
+
+  const { data: children, isLoading: isChildrenLoading } = useTaskChildren(
+    task?.has_children ? task.id : undefined
+  );
+
+  const childrenProgress = useMemo(() => {
+    if (!children || children.length === 0) return null;
+    const done = children.filter((c) => c.status === 'done').length;
+    return { done, total: children.length };
+  }, [children]);
 
   const formatTimeAgo = (iso: string) => {
     const d = new Date(iso);
@@ -76,6 +115,23 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
   const titleContent = `# ${task.title || 'Task'}`;
   const descriptionContent = task.description || '';
 
+  const childColumns: ColumnDef<ChildTaskWithDeps>[] = [
+    {
+      id: 'status',
+      header: '',
+      accessor: (child) => <StatusBadge status={child.status} />,
+      className: 'pr-2 w-0',
+    },
+    {
+      id: 'title',
+      header: '',
+      accessor: (child) => (
+        <span className="truncate block max-w-[20rem]">{child.title}</span>
+      ),
+      className: 'pr-4',
+    },
+  ];
+
   const attemptColumns: ColumnDef<WorkspaceWithSession>[] = [
     {
       id: 'executor',
@@ -109,6 +165,27 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
           </div>
 
           <div className="mt-6 flex-shrink-0 space-y-4">
+            {task.has_children && (
+              <DataTable
+                data={children ?? []}
+                columns={childColumns}
+                keyExtractor={(child) => child.id}
+                onRowClick={(child) => {
+                  if (projectId) {
+                    navigate(
+                      `${paths.task(projectId, child.id)}/attempts/latest`
+                    );
+                  }
+                }}
+                isLoading={isChildrenLoading}
+                headerContent={
+                  childrenProgress
+                    ? `Stories: ${childrenProgress.done}/${childrenProgress.total} complete`
+                    : 'Stories'
+                }
+              />
+            )}
+
             {task.parent_workspace_id && (
               <DataTable
                 data={parentAttempt ? [parentAttempt] : []}

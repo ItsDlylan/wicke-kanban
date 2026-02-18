@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT rs.id as \"id!: Uuid\", rs.project_id as \"project_id!: Uuid\",\n                      rs.workspace_id as \"workspace_id: Uuid\",\n                      rs.status as \"status!: RalphSessionStatus\",\n                      rs.created_at as \"created_at!: DateTime<Utc>\",\n                      rs.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM ralph_sessions rs\n               JOIN ralph_session_tasks rst ON rst.ralph_session_id = rs.id\n               WHERE rst.task_id = $1\n                 AND rs.status IN ('pending', 'running')\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "project_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "workspace_id: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "status!: RalphSessionStatus",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "eb48559025db4aafc5d6f11a87c35f5b2cff77035064a7f7c245f90c241567c5"
+}

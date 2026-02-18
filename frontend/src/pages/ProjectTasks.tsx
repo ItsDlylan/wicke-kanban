@@ -77,11 +77,11 @@ type Task = TaskWithAttemptStatus;
 
 const TASK_STATUSES = [
   'backlog',
-  'todo',
-  'spec',
-  'plan',
+  'plangenerating',
+  'ready',
   'ralph',
-  'inreview',
+  'inprogress',
+  'qa',
   'done',
   'cancelled',
 ] as const;
@@ -277,6 +277,22 @@ export function ProjectTasks() {
   const isTaskView = !!taskId && !effectiveAttemptId;
   const { data: attempt } = useTaskAttemptWithSession(effectiveAttemptId);
 
+  // Ralph parent tasks (has_children) should always show task view, not attempt view.
+  // Redirect from any attempt URL back to the task view.
+  useEffect(() => {
+    if (!projectId || !taskId || !selectedTask) return;
+    if (selectedTask.has_children && (effectiveAttemptId || isLatest)) {
+      navigateWithSearch(paths.task(projectId, taskId), { replace: true });
+    }
+  }, [
+    projectId,
+    taskId,
+    selectedTask,
+    effectiveAttemptId,
+    isLatest,
+    navigateWithSearch,
+  ]);
+
   const { data: branchStatus, error: branchStatusError } = useBranchStatus(
     attempt?.id
   );
@@ -345,11 +361,11 @@ export function ProjectTasks() {
   const kanbanColumns = useMemo(() => {
     const columns: KanbanColumns = {
       backlog: [],
-      todo: [],
-      spec: [],
-      plan: [],
+      plangenerating: [],
+      ready: [],
       ralph: [],
-      inreview: [],
+      inprogress: [],
+      qa: [],
       done: [],
       cancelled: [],
     };
@@ -390,11 +406,11 @@ export function ProjectTasks() {
   const visibleTasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = {
       backlog: [],
-      todo: [],
-      spec: [],
-      plan: [],
+      plangenerating: [],
+      ready: [],
       ralph: [],
-      inreview: [],
+      inprogress: [],
+      qa: [],
       done: [],
       cancelled: [],
     };
@@ -567,6 +583,8 @@ export function ProjectTasks() {
 
       if (attemptIdToShow) {
         navigateWithSearch(paths.attempt(projectId, task.id, attemptIdToShow));
+      } else if (task.status === 'ralph') {
+        navigateWithSearch(paths.task(projectId, task.id));
       } else {
         navigateWithSearch(`${paths.task(projectId, task.id)}/attempts/latest`);
       }

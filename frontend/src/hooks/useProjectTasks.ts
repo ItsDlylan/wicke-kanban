@@ -37,11 +37,11 @@ export const useProjectTasks = (projectId: string): UseProjectTasksResult => {
     const merged: Record<string, TaskWithAttemptStatus> = { ...localTasksById };
     const byStatus: Record<TaskStatus, TaskWithAttemptStatus[]> = {
       backlog: [],
-      todo: [],
-      spec: [],
-      plan: [],
+      plangenerating: [],
+      ready: [],
       ralph: [],
-      inreview: [],
+      inprogress: [],
+      qa: [],
       done: [],
       cancelled: [],
     };

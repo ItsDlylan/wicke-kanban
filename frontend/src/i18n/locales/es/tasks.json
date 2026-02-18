@@ -560,9 +560,12 @@
     "descriptionPlaceholder": "Agrega más detalles (opcional). Escribe @ para buscar archivos.",
     "statusLabel": "Estado",
     "statusOptions": {
-      "todo": "Por Hacer",
+      "backlog": "Backlog",
+      "plangenerating": "Generando Plan",
+      "ready": "Listo",
+      "ralph": "Ralph",
       "inprogress": "En Progreso",
-      "inreview": "En Revisión",
+      "qa": "Q/A",
       "done": "Completado",
       "cancelled": "Cancelado"
     },

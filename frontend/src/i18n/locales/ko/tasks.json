@@ -560,9 +560,12 @@
     "descriptionPlaceholder": "세부 정보 추가 (선택 사항). @를 입력하여 파일을 검색합니다.",
     "statusLabel": "상태",
     "statusOptions": {
-      "todo": "할 일",
+      "backlog": "백로그",
+      "plangenerating": "계획 생성 중",
+      "ready": "준비됨",
+      "ralph": "Ralph",
       "inprogress": "진행 중",
-      "inreview": "검토 중",
+      "qa": "Q/A",
       "done": "완료",
       "cancelled": "취소됨"
     },

@@ -18,6 +18,7 @@ use db::{
         execution_process_repo_state::{
             CreateExecutionProcessRepoState, ExecutionProcessRepoState,
         },
+        merge::Merge,
         repo::Repo,
         session::{CreateSession, Session, SessionError},
         task::{Task, TaskStatus},
@@ -59,8 +60,8 @@ use utils::{
 use uuid::Uuid;
 
 use crate::services::{
-    notification::NotificationService, workspace_manager::WorkspaceError as WorkspaceManagerError,
-    worktree_manager::WorktreeError,
+    git_host::GitHostProvider, notification::NotificationService,
+    workspace_manager::WorkspaceError as WorkspaceManagerError, worktree_manager::WorktreeError,
 };
 pub type ContainerRef = String;
 
@@ -227,6 +228,129 @@ pub trait ContainerService {
         action.next_action.is_none()
     }
 
+    /// Best-effort auto-create PR for a workspace after Ralph loop completion.
+    /// Pushes branch to remote, creates PR via git host, and stores the PR in the database.
+    /// Logs errors but does not fail — this is best-effort.
+    async fn auto_create_pr(&self, workspace: &Workspace, task: &Task) {
+        let pool = &self.db().pool;
+
+        let workspace_repos =
+            match WorkspaceRepo::find_repos_with_target_branch_for_workspace(pool, workspace.id)
+                .await
+            {
+                Ok(repos) => repos,
+                Err(e) => {
+                    tracing::error!("Auto-PR: failed to load workspace repos: {e}");
+                    return;
+                }
+            };
+
+        for wr in &workspace_repos {
+            let repo_path = &wr.repo.path;
+            let target_branch = &wr.target_branch;
+
+            // Ensure container exists so we have a worktree path
+            let container_ref = match self.ensure_container_exists(workspace).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("Auto-PR: failed to ensure container: {e}");
+                    continue;
+                }
+            };
+            let workspace_path = PathBuf::from(&container_ref);
+            let worktree_path = workspace_path.join(&wr.repo.name);
+
+            // Resolve remotes
+            let push_remote = match self
+                .git()
+                .resolve_remote_for_branch(repo_path, &workspace.branch)
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("Auto-PR: failed to resolve push remote: {e}");
+                    continue;
+                }
+            };
+
+            let (target_remote, base_branch) = match self
+                .git()
+                .get_remote_from_branch_name(repo_path, target_branch)
+            {
+                Ok(remote) => {
+                    let branch = target_branch
+                        .strip_prefix(&format!("{}/", remote.name))
+                        .unwrap_or(target_branch);
+                    (remote, branch.to_string())
+                }
+                Err(_) => (push_remote.clone(), target_branch.clone()),
+            };
+
+            // Push branch
+            if let Err(e) = self
+                .git()
+                .push_to_remote(&worktree_path, &workspace.branch, false)
+            {
+                tracing::error!("Auto-PR: failed to push branch: {e}");
+                continue;
+            }
+
+            // Create PR via git host
+            let git_host = match super::git_host::GitHostService::from_url(&target_remote.url) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::error!("Auto-PR: failed to resolve git host: {e}");
+                    continue;
+                }
+            };
+
+            let pr_request = super::git_host::CreatePrRequest {
+                title: task.title.clone(),
+                body: None,
+                head_branch: workspace.branch.clone(),
+                base_branch: base_branch.clone(),
+                draft: Some(false),
+                head_repo_url: Some(push_remote.url.clone()),
+            };
+
+            match git_host
+                .create_pr(repo_path, &target_remote.url, &pr_request)
+                .await
+            {
+                Ok(pr_info) => {
+                    if let Err(e) = Merge::create_pr(
+                        pool,
+                        workspace.id,
+                        wr.repo.id,
+                        &base_branch,
+                        pr_info.number,
+                        &pr_info.url,
+                    )
+                    .await
+                    {
+                        tracing::error!("Auto-PR: failed to store PR in database: {e}");
+                    }
+
+                    self.notification_service()
+                        .notify(
+                            &format!("PR Created: {}", task.title),
+                            &format!("🔗 Auto-created PR: {}", pr_info.url),
+                        )
+                        .await;
+
+                    tracing::info!(
+                        "Auto-PR: created PR #{} for workspace {} — {}",
+                        pr_info.number,
+                        workspace.id,
+                        pr_info.url
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Auto-PR: failed to create PR: {e}");
+                }
+            }
+        }
+    }
+
     /// Finalize task execution by updating status to InReview and sending notifications.
     /// For Ralph loop children, this advances the orchestration loop instead.
     async fn finalize_task(&self, ctx: &ExecutionContext) {
@@ -311,7 +435,7 @@ pub trait ContainerService {
                                 }
                             };
 
-                        if let Err(e) = super::ralph_loop::advance_ralph_loop(
+                        match super::ralph_loop::advance_ralph_loop(
                             pool,
                             self,
                             &ctx.task,
@@ -320,11 +444,17 @@ pub trait ContainerService {
                         )
                         .await
                         {
-                            tracing::error!("Failed to advance Ralph loop: {e}");
-                            // Fall through to normal finalization for the parent
-                            Task::update_status(pool, parent_task.id, TaskStatus::QA)
-                                .await
-                                .ok();
+                            Ok(super::ralph_loop::AdvanceResult::AllComplete) => {
+                                self.auto_create_pr(&parent_workspace, &parent_task).await;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::error!("Failed to advance Ralph loop: {e}");
+                                // Fall through to normal finalization for the parent
+                                Task::update_status(pool, parent_task.id, TaskStatus::QA)
+                                    .await
+                                    .ok();
+                            }
                         }
                         return;
                     }

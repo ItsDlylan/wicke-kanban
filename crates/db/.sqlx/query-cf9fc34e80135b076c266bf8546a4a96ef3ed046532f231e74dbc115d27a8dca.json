@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.plan, t.plan_status, t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'todo'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
+  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.plan, t.plan_status, t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'ready'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -82,5 +82,5 @@
       false
     ]
   },
-  "hash": "35bbb8c4f86f8086604458f68d3aee05f549914ff0dc7bcfa3f816a1224b8a73"
+  "hash": "cf9fc34e80135b076c266bf8546a4a96ef3ed046532f231e74dbc115d27a8dca"
 }

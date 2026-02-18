@@ -560,9 +560,12 @@
     "descriptionPlaceholder": "詳細を追加（オプション）。@でファイルを検索できます。",
     "statusLabel": "ステータス",
     "statusOptions": {
-      "todo": "未着手",
+      "backlog": "バックログ",
+      "plangenerating": "プラン生成中",
+      "ready": "準備完了",
+      "ralph": "Ralph",
       "inprogress": "進行中",
-      "inreview": "レビュー中",
+      "qa": "Q/A",
       "done": "完了",
       "cancelled": "キャンセル"
     },

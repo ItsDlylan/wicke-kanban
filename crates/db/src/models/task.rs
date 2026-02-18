@@ -16,11 +16,11 @@ use super::{project::Project, workspace::Workspace};
 pub enum TaskStatus {
     #[default]
     Backlog,
-    Todo,
-    Spec,
-    Plan,
+    PlanGenerating,
+    Ready,
     Ralph,
-    InReview,
+    InProgress,
+    QA,
     Done,
     Cancelled,
 }
@@ -49,6 +49,8 @@ pub struct TaskWithAttemptStatus {
     pub has_in_progress_attempt: bool,
     pub last_attempt_failed: bool,
     pub executor: String,
+    pub has_spec: bool,
+    pub has_children: bool,
 }
 
 impl std::ops::Deref for TaskWithAttemptStatus {
@@ -174,7 +176,15 @@ impl Task {
       WHERE w.task_id = t.id
      ORDER BY s.created_at DESC
       LIMIT 1
-    )                               AS "executor!: String"
+    )                               AS "executor!: String",
+
+  CASE WHEN EXISTS (
+    SELECT 1 FROM spec_sheets ss WHERE ss.task_id = t.id LIMIT 1
+  ) THEN 1 ELSE 0 END              AS "has_spec!: i64",
+
+  CASE WHEN EXISTS (
+    SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id LIMIT 1
+  ) THEN 1 ELSE 0 END              AS "has_children!: i64"
 
 FROM tasks t
 WHERE t.project_id = $1
@@ -204,6 +214,8 @@ ORDER BY t.created_at DESC"#,
                 has_in_progress_attempt: rec.has_in_progress_attempt != 0,
                 last_attempt_failed: rec.last_attempt_failed != 0,
                 executor: rec.executor,
+                has_spec: rec.has_spec != 0,
+                has_children: rec.has_children != 0,
             })
             .collect();
 
@@ -419,7 +431,7 @@ ORDER BY t.created_at DESC"#,
             r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.plan, t.plan_status, t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks t
                WHERE t.parent_workspace_id = $1
-                 AND t.status = 'todo'
+                 AND t.status = 'ready'
                  AND NOT EXISTS (
                      SELECT 1 FROM task_dependencies td
                      JOIN tasks dep ON dep.id = td.depends_on
