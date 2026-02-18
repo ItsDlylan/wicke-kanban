@@ -202,11 +202,7 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                     onClick={() => {
                       if (projectId) {
                         navigate(
-                          paths.attempt(
-                            projectId,
-                            task.id,
-                            displayedAttempts[0].id
-                          )
+                          `${paths.attempt(projectId, task.id, displayedAttempts[0].id)}?view=diffs`
                         );
                       }
                     }}
