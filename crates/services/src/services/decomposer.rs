@@ -115,6 +115,24 @@ pub fn generate_decomposition_prompt(spec: &SpecSheet, task_title: &str) -> Stri
     prompt
 }
 
+/// Find the start of a JSON object in text that may contain bare `{` in URLs.
+/// Returns the slice from the first `{` that is followed by optional whitespace
+/// then `"` (indicating a JSON key), through the last `}`.
+fn find_json_object_start(s: &str) -> Option<&str> {
+    let last_brace = s.rfind('}')?;
+    let mut search_from = 0;
+    while let Some(pos) = s[search_from..].find('{') {
+        let abs_pos = search_from + pos;
+        // Check if what follows the `{` (after optional whitespace) is `"`
+        let after = s[abs_pos + 1..].trim_start();
+        if after.starts_with('"') {
+            return Some(&s[abs_pos..=last_brace]);
+        }
+        search_from = abs_pos + 1;
+    }
+    None
+}
+
 /// Parse the raw output from Claude into a DecompositionResult.
 pub fn parse_decomposition_output(output: &str) -> Result<DecompositionResult, DecomposerError> {
     let trimmed = output.trim();
@@ -133,17 +151,14 @@ pub fn parse_decomposition_output(output: &str) -> Result<DecompositionResult, D
         trimmed
     };
 
-    // Try to find JSON object boundaries if there's surrounding text
+    // Try to find JSON object boundaries if there's surrounding text.
+    // We need to find the actual JSON object start, skipping bare `{` in URL
+    // templates like `{event}/trade-stats`. Look for `{` followed by optional
+    // whitespace then `"` which indicates a JSON object with a string key.
     let json_str = if json_str.starts_with('{') {
         json_str
-    } else if let Some(start) = json_str.find('{') {
-        if let Some(end) = json_str.rfind('}') {
-            &json_str[start..=end]
-        } else {
-            json_str
-        }
     } else {
-        json_str
+        find_json_object_start(json_str).unwrap_or(json_str)
     };
 
     let result: DecompositionResult = serde_json::from_str(json_str)
@@ -199,7 +214,7 @@ pub async fn create_child_tasks(
             project_id,
             title: story.title.clone(),
             description: Some(story.description.clone()),
-            status: Some(TaskStatus::Todo),
+            status: Some(TaskStatus::Ready),
             parent_workspace_id: None,
             parent_task_id: Some(parent_task_id),
             image_ids: None,
@@ -273,5 +288,13 @@ mod tests {
     fn test_parse_decomposition_output_empty_stories() {
         let output = r#"{ "stories": [] }"#;
         assert!(parse_decomposition_output(output).is_err());
+    }
+
+    #[test]
+    fn test_parse_decomposition_output_with_url_braces_before_json() {
+        let output = "Route `{event}/trade-stats` needs naming.\n{\"stories\": [{ \"id\": \"s1\", \"title\": \"Test\", \"description\": \"desc\", \"dependsOn\": [], \"sortOrder\": 1 }]}";
+        let result = parse_decomposition_output(output).unwrap();
+        assert_eq!(result.stories.len(), 1);
+        assert_eq!(result.stories[0].title, "Test");
     }
 }

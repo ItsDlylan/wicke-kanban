@@ -85,6 +85,23 @@ pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, S
     Ok(stdout)
 }
 
+/// Find the start of a JSON object in text that may contain bare `{` in URLs.
+/// Returns the slice from the first `{` that is followed by optional whitespace
+/// then `"` (indicating a JSON key), through the last `}`.
+fn find_json_object_start(s: &str) -> Option<&str> {
+    let last_brace = s.rfind('}')?;
+    let mut search_from = 0;
+    while let Some(pos) = s[search_from..].find('{') {
+        let abs_pos = search_from + pos;
+        let after = s[abs_pos + 1..].trim_start();
+        if after.starts_with('"') {
+            return Some(&s[abs_pos..=last_brace]);
+        }
+        search_from = abs_pos + 1;
+    }
+    None
+}
+
 /// Parse the raw output from Claude into a GeneratedSpec.
 pub fn parse_spec_output(output: &str) -> Result<GeneratedSpec, SpecGeneratorError> {
     let trimmed = output.trim();
@@ -103,17 +120,14 @@ pub fn parse_spec_output(output: &str) -> Result<GeneratedSpec, SpecGeneratorErr
         trimmed
     };
 
-    // Try to find JSON object boundaries if there's surrounding text
+    // Try to find JSON object boundaries if there's surrounding text.
+    // We need to find the actual JSON object start, skipping bare `{` in URL
+    // templates like `{event}/trade-stats`. Look for `{` followed by optional
+    // whitespace then `"` which indicates a JSON object with a string key.
     let json_str = if json_str.starts_with('{') {
         json_str
-    } else if let Some(start) = json_str.find('{') {
-        if let Some(end) = json_str.rfind('}') {
-            &json_str[start..=end]
-        } else {
-            json_str
-        }
     } else {
-        json_str
+        find_json_object_start(json_str).unwrap_or(json_str)
     };
 
     let result: GeneratedSpec = serde_json::from_str(json_str)
@@ -169,6 +183,13 @@ mod tests {
     #[test]
     fn test_parse_spec_output_with_surrounding_text() {
         let output = "Here is the spec:\n{ \"overview\": \"Test\", \"requirements\": [], \"acceptance_criteria\": [], \"constraints\": [], \"tech_notes\": \"\" }\nDone!";
+        let result = parse_spec_output(output).unwrap();
+        assert_eq!(result.overview, "Test");
+    }
+
+    #[test]
+    fn test_parse_spec_output_with_url_braces_before_json() {
+        let output = "Route `{event}/trade-stats` needs naming.\n{\"overview\": \"Test\", \"requirements\": [], \"acceptance_criteria\": [], \"constraints\": [], \"tech_notes\": \"\"}";
         let result = parse_spec_output(output).unwrap();
         assert_eq!(result.overview, "Test");
     }
