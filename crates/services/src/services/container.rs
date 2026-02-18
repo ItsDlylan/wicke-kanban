@@ -253,10 +253,10 @@ pub trait ContainerService {
                                 ctx.task.id,
                                 parent_task.id
                             );
-                            Task::update_status(pool, ctx.task.id, TaskStatus::InReview)
+                            Task::update_status(pool, ctx.task.id, TaskStatus::QA)
                                 .await
                                 .ok();
-                            Task::update_status(pool, parent_task.id, TaskStatus::InReview)
+                            Task::update_status(pool, parent_task.id, TaskStatus::QA)
                                 .await
                                 .ok();
                             self.notification_service()
@@ -322,7 +322,7 @@ pub trait ContainerService {
                         {
                             tracing::error!("Failed to advance Ralph loop: {e}");
                             // Fall through to normal finalization for the parent
-                            Task::update_status(pool, parent_task.id, TaskStatus::InReview)
+                            Task::update_status(pool, parent_task.id, TaskStatus::QA)
                                 .await
                                 .ok();
                         }
@@ -333,7 +333,7 @@ pub trait ContainerService {
         }
 
         // Default: set task to InReview + notify
-        if let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::InReview).await {
+        if let Err(e) = Task::update_status(pool, ctx.task.id, TaskStatus::QA).await {
             tracing::error!("Failed to update task status to InReview: {e}");
         }
 
@@ -426,8 +426,7 @@ pub trait ContainerService {
                 && let Ok(Some(workspace)) =
                     Workspace::find_by_id(&self.db().pool, session.workspace_id).await
                 && let Ok(Some(task)) = workspace.parent_task(&self.db().pool).await
-                && let Err(e) =
-                    Task::update_status(&self.db().pool, task.id, TaskStatus::InReview).await
+                && let Err(e) = Task::update_status(&self.db().pool, task.id, TaskStatus::QA).await
             {
                 tracing::error!(
                     "Failed to update task status to InReview for orphaned session: {}",
@@ -1306,7 +1305,11 @@ pub trait ContainerService {
         )
         .await?;
 
-        let prompt = task.to_prompt();
+        let prompt = if let Some(plan) = task.plan.as_deref().filter(|p| !p.is_empty()) {
+            super::ralph_loop::build_ralph_prompt(plan, &task.title)
+        } else {
+            task.to_prompt()
+        };
 
         let repos_with_setup: Vec<_> = repos.iter().filter(|r| r.setup_script.is_some()).collect();
 
@@ -1374,13 +1377,31 @@ pub trait ContainerService {
         executor_action: &ExecutorAction,
         run_reason: &ExecutionProcessRunReason,
     ) -> Result<ExecutionProcess, ContainerError> {
-        // Update task status to Ralph when starting an execution
+        // Update task status when starting an execution
         let task = workspace
             .parent_task(&self.db().pool)
             .await?
             .ok_or(SqlxError::RowNotFound)?;
-        if task.status != TaskStatus::Ralph && run_reason != &ExecutionProcessRunReason::DevServer {
-            Task::update_status(&self.db().pool, task.id, TaskStatus::Ralph).await?;
+        if run_reason != &ExecutionProcessRunReason::DevServer {
+            // If task is part of a ralph session, set to Ralph; otherwise InProgress
+            let target_status = if task.status == TaskStatus::Ralph {
+                TaskStatus::Ralph
+            } else {
+                use db::models::ralph_session::RalphSession;
+                if RalphSession::find_active_by_task_id(&self.db().pool, task.id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    TaskStatus::Ralph
+                } else {
+                    TaskStatus::InProgress
+                }
+            };
+            if task.status != target_status {
+                Task::update_status(&self.db().pool, task.id, target_status).await?;
+            }
         }
         // Create new execution process record
         // Capture current HEAD per repository as the "before" commit for this execution
@@ -1472,7 +1493,7 @@ pub trait ContainerService {
                     update_error
                 );
             }
-            Task::update_status(&self.db().pool, task.id, TaskStatus::InReview).await?;
+            Task::update_status(&self.db().pool, task.id, TaskStatus::QA).await?;
 
             // Emit stderr error message
             let log_message = LogMsg::Stderr(format!("Failed to start execution: {start_error}"));
