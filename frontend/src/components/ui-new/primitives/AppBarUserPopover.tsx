@@ -4,8 +4,6 @@ import {
   CloudArrowUpIcon,
   GearIcon,
   PlusIcon,
-  SignInIcon,
-  SignOutIcon,
   UserIcon,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +19,6 @@ import {
 } from './Dropdown';
 
 interface AppBarUserPopoverProps {
-  isSignedIn: boolean;
   avatarUrl: string | null;
   avatarError: boolean;
   organizations: OrganizationWithRole[];
@@ -31,14 +28,11 @@ interface AppBarUserPopoverProps {
   onOrgSelect: (orgId: string) => void;
   onCreateOrg?: () => void;
   onOrgSettings?: (orgId: string) => void;
-  onSignIn: () => void;
-  onLogout: () => void;
   onAvatarError: () => void;
   onMigrate?: () => void;
 }
 
 export function AppBarUserPopover({
-  isSignedIn,
   avatarUrl,
   avatarError,
   organizations,
@@ -48,39 +42,10 @@ export function AppBarUserPopover({
   onOrgSelect,
   onCreateOrg,
   onOrgSettings,
-  onSignIn,
-  onLogout,
   onAvatarError,
   onMigrate,
 }: AppBarUserPopoverProps) {
   const { t } = useTranslation();
-
-  if (!isSignedIn) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'flex items-center justify-center w-10 h-10 rounded-lg',
-              'bg-panel text-normal font-medium text-sm',
-              'transition-colors cursor-pointer',
-              'hover:bg-panel/70',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand'
-            )}
-            aria-label="Sign in"
-          >
-            <UserIcon className="size-icon-sm" weight="bold" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="end" className="min-w-[200px]">
-          <DropdownMenuItem icon={SignInIcon} onClick={onSignIn}>
-            {t('signIn')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -150,10 +115,6 @@ export function AppBarUserPopover({
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem icon={SignOutIcon} onClick={onLogout}>
-          {t('signOut')}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

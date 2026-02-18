@@ -6,7 +6,6 @@ import {
   type Environment,
   type UserSystemInfo,
   type BaseAgentCapability,
-  type LoginStatus,
 } from 'shared/types';
 import type { ExecutorConfig } from 'shared/types';
 import { configApi } from '../lib/api';
@@ -18,7 +17,6 @@ interface UserSystemState {
   profiles: Record<string, ExecutorConfig> | null;
   capabilities: Record<string, BaseAgentCapability[]> | null;
   analyticsUserId: string | null;
-  loginStatus: LoginStatus | null;
 }
 
 interface UserSystemContextType {
@@ -36,7 +34,6 @@ interface UserSystemContextType {
   profiles: Record<string, ExecutorConfig> | null;
   capabilities: Record<string, BaseAgentCapability[]> | null;
   analyticsUserId: string | null;
-  loginStatus: LoginStatus | null;
   setEnvironment: (env: Environment | null) => void;
   setProfiles: (profiles: Record<string, ExecutorConfig> | null) => void;
   setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
@@ -69,7 +66,6 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
   const config = userSystemInfo?.config || null;
   const environment = userSystemInfo?.environment || null;
   const analyticsUserId = userSystemInfo?.analytics_user_id || null;
-  const loginStatus = userSystemInfo?.login_status || null;
   const profiles =
     (userSystemInfo?.executors as Record<string, ExecutorConfig> | null) ||
     null;
@@ -182,14 +178,12 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
         profiles,
         capabilities,
         analyticsUserId,
-        loginStatus,
       },
       config,
       environment,
       profiles,
       capabilities,
       analyticsUserId,
-      loginStatus,
       updateConfig,
       saveConfig,
       updateAndSaveConfig,
@@ -205,7 +199,6 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
       profiles,
       capabilities,
       analyticsUserId,
-      loginStatus,
       updateConfig,
       saveConfig,
       updateAndSaveConfig,

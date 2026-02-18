@@ -13,7 +13,6 @@ import { useBranchStatus } from '@/hooks/useBranchStatus';
 import { useShape } from '@/lib/electric/hooks';
 import { useExecutionProcessesContext } from '@/contexts/ExecutionProcessesContext';
 import { useLogsPanel } from '@/contexts/LogsPanelContext';
-import { useAuth } from '@/hooks/auth/useAuth';
 import { PROJECT_ISSUES_SHAPE } from 'shared/remote-types';
 import type { Workspace, Merge } from 'shared/types';
 import type {
@@ -96,7 +95,6 @@ export function useActionVisibilityContext(
   const { data: branchStatus } = useBranchStatus(workspaceId);
   const { isAttemptRunningVisible } = useExecutionProcessesContext();
   const { logsPanelContent } = useLogsPanel();
-  const { isSignedIn } = useAuth();
 
   return useMemo(() => {
     // Compute isAllDiffsExpanded
@@ -149,7 +147,6 @@ export function useActionVisibilityContext(
       hasSelectedKanbanIssue,
       hasSelectedKanbanIssueParent,
       isCreatingIssue: kanbanCreateMode,
-      isSignedIn,
     };
   }, [
     layoutMode,
@@ -173,7 +170,6 @@ export function useActionVisibilityContext(
     hasSelectedKanbanIssue,
     hasSelectedKanbanIssueParent,
     kanbanCreateMode,
-    isSignedIn,
   ]);
 }
 

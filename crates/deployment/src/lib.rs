@@ -19,7 +19,6 @@ use serde_json::Value;
 use services::services::{
     analytics::AnalyticsService,
     approvals::Approvals,
-    auth::AuthContext,
     config::{Config, ConfigError},
     container::{ContainerError, ContainerService},
     events::{EventError, EventService},
@@ -106,8 +105,6 @@ pub trait Deployment: Clone + Send + Sync + 'static {
     fn approvals(&self) -> &Approvals;
 
     fn queued_message_service(&self) -> &QueuedMessageService;
-
-    fn auth_context(&self) -> &AuthContext;
 
     async fn update_sentry_scope(&self) -> Result<(), DeploymentError> {
         let user_id = self.user_id();

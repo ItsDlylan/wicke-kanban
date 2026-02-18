@@ -16,7 +16,6 @@ import {
   PlusIcon,
   TrashIcon,
   DotsThreeIcon,
-  SignInIcon,
   XIcon,
   DotsSixVerticalIcon,
   PencilSimpleLineIcon,
@@ -32,11 +31,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../primitives/Popover';
-import { PrimaryButton } from '../../primitives/PrimaryButton';
 import { Switch } from '@/components/ui/switch';
 import { useUserOrganizations } from '@/hooks/useUserOrganizations';
-import { useAuth } from '@/hooks/auth/useAuth';
-import { OAuthDialog } from '@/components/dialogs/global/OAuthDialog';
 import { CreateRemoteProjectDialog } from '@/components/dialogs/org/CreateRemoteProjectDialog';
 import { DeleteRemoteProjectDialog } from '@/components/dialogs/org/DeleteRemoteProjectDialog';
 import { useShape } from '@/lib/electric/hooks';
@@ -325,7 +321,6 @@ export function RemoteProjectsSettingsSection({
 }: RemoteProjectsSettingsSectionProps) {
   const { t } = useTranslation(['settings', 'common', 'projects']);
   const { setDirty: setContextDirty } = useSettingsDirty();
-  const { isSignedIn, isLoaded } = useAuth();
 
   // Selection state - initialize with provided values
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(
@@ -792,7 +787,7 @@ export function RemoteProjectsSettingsSection({
   };
 
   // Loading state
-  if (!isLoaded || orgsLoading) {
+  if (orgsLoading) {
     return (
       <div className="flex items-center justify-center py-8 gap-2">
         <SpinnerIcon
@@ -802,35 +797,6 @@ export function RemoteProjectsSettingsSection({
         <span className="text-normal">
           {t('settings.remoteProjects.loading', 'Loading remote projects...')}
         </span>
-      </div>
-    );
-  }
-
-  // Auth check - show sign-in prompt if not signed in
-  if (!isSignedIn) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-base font-medium text-high">
-            {t(
-              'settings.remoteProjects.loginRequired.title',
-              'Sign in required'
-            )}
-          </h3>
-          <p className="text-sm text-low mt-1">
-            {t(
-              'settings.remoteProjects.loginRequired.description',
-              'Sign in to manage your remote projects.'
-            )}
-          </p>
-        </div>
-        <PrimaryButton
-          variant="secondary"
-          value={t('settings.remoteProjects.loginRequired.action', 'Sign in')}
-          onClick={() => void OAuthDialog.show({})}
-        >
-          <SignInIcon className="size-icon-xs mr-1" weight="bold" />
-        </PrimaryButton>
       </div>
     );
   }

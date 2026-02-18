@@ -1,7 +1,6 @@
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
 
-import { tokenManager } from '../auth/tokenManager';
 import { makeRequest, REMOTE_API_URL } from '@/lib/remoteApi';
 import type { MutationDefinition, ShapeDefinition } from 'shared/remote-types';
 import type { CollectionConfig, SyncError } from './types';
@@ -125,9 +124,8 @@ function getRowKey(item: Record<string, unknown>): string {
 }
 
 /**
- * Get authenticated shape options for an Electric shape.
+ * Get shape options for an Electric shape.
  * Includes error handling with exponential backoff and custom fetch wrapper.
- * Registers with tokenManager for pause/resume during token refresh.
  */
 function getAuthenticatedShapeOptions(
   shape: ShapeDefinition<unknown>,
@@ -139,22 +137,8 @@ function getAuthenticatedShapeOptions(
   // Create error handler for this shape's lifecycle
   const errorHandler = new ErrorHandler();
 
-  // Track pause state during token refresh or logout
-  let isPaused = false;
-
-  // Register with tokenManager for pause/resume during token refresh.
-  // This prevents 401 spam when multiple shapes hit auth errors simultaneously.
-  // Shapes are also paused on logout and resumed on login.
-  tokenManager.registerShape({
-    pause: () => {
-      isPaused = true;
-    },
-    resume: () => {
-      isPaused = false;
-      // Clear error state to allow clean retry after refresh
-      errorHandler.reset();
-    },
-  });
+  // Track pause state
+  const isPaused = false;
 
   // Single debounced error reporter for both network and Electric errors
   const reportError = (error: SyncError) => {
@@ -171,18 +155,7 @@ function getAuthenticatedShapeOptions(
   return {
     url: `${REMOTE_API_URL}${url}`,
     params,
-    headers: {
-      Authorization: async () => {
-        const token = await tokenManager.getToken();
-        if (!token) {
-          // No token means user is logged out — pause this shape so the
-          // fetchClient aborts the request instead of sending it without auth.
-          isPaused = true;
-          return '';
-        }
-        return `Bearer ${token}`;
-      },
-    },
+    headers: {},
     parser: {
       timestamptz: (value: string) => value,
     },
@@ -204,15 +177,6 @@ function getAuthenticatedShapeOptions(
 
       const status = error.status;
       const message = error.message || String(error);
-
-      // Handle 401 by triggering token refresh
-      if (status === 401) {
-        tokenManager.triggerRefresh().catch(() => {
-          // Refresh failed - report the original 401 error
-          reportError({ status, message });
-        });
-        return;
-      }
 
       reportError({ status, message });
     },

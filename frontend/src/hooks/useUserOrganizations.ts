@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { organizationsApi } from '../lib/api';
-import { useUserSystem } from '@/components/ConfigProvider';
 import type { ListOrganizationsResponse } from 'shared/types';
 import { organizationKeys } from './organizationKeys';
 
@@ -8,13 +7,10 @@ import { organizationKeys } from './organizationKeys';
  * Hook to fetch all organizations that the current user is a member of
  */
 export function useUserOrganizations() {
-  const { loginStatus } = useUserSystem();
-  const isLoggedIn = loginStatus?.status === 'loggedin';
-
   return useQuery<ListOrganizationsResponse>({
     queryKey: organizationKeys.userList(),
     queryFn: () => organizationsApi.getUserOrganizations(),
-    enabled: Boolean(isLoggedIn),
+    enabled: false, // Auth is not available in local-only mode
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

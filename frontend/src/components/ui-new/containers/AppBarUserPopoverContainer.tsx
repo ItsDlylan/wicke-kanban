@@ -3,11 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { OrganizationWithRole } from 'shared/types';
 import { AppBarUserPopover } from '../primitives/AppBarUserPopover';
 import { SettingsDialog } from '../dialogs/SettingsDialog';
-import { useAuth } from '@/hooks/auth/useAuth';
-import { useUserSystem } from '@/components/ConfigProvider';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
-import { useActions } from '@/contexts/ActionsContext';
-import { Actions } from '@/components/ui-new/actions';
 
 interface AppBarUserPopoverContainerProps {
   organizations: OrganizationWithRole[];
@@ -22,27 +18,10 @@ export function AppBarUserPopoverContainer({
   onOrgSelect,
   onCreateOrg,
 }: AppBarUserPopoverContainerProps) {
-  const { executeAction } = useActions();
-  const { isSignedIn } = useAuth();
-  const { loginStatus } = useUserSystem();
   const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
-
-  // Extract avatar URL from first provider
-  const avatarUrl =
-    loginStatus?.status === 'loggedin'
-      ? (loginStatus.profile.providers[0]?.avatar_url ?? null)
-      : null;
-
-  const handleSignIn = async () => {
-    await executeAction(Actions.SignIn);
-  };
-
-  const handleLogout = async () => {
-    await executeAction(Actions.SignOut);
-  };
 
   const handleOrgSettings = async (orgId: string) => {
     setSelectedOrgId(orgId);
@@ -56,8 +35,7 @@ export function AppBarUserPopoverContainer({
 
   return (
     <AppBarUserPopover
-      isSignedIn={isSignedIn}
-      avatarUrl={avatarUrl}
+      avatarUrl={null}
       avatarError={avatarError}
       organizations={organizations}
       selectedOrgId={selectedOrgId}
@@ -66,8 +44,6 @@ export function AppBarUserPopoverContainer({
       onOrgSelect={onOrgSelect}
       onCreateOrg={onCreateOrg}
       onOrgSettings={handleOrgSettings}
-      onSignIn={handleSignIn}
-      onLogout={handleLogout}
       onAvatarError={() => setAvatarError(true)}
       onMigrate={handleMigrate}
     />

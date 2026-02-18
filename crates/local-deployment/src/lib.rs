@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use api_types::LoginStatus;
 use async_trait::async_trait;
 use db::DBService;
 use deployment::{Deployment, DeploymentError};
@@ -9,14 +8,12 @@ use git::GitService;
 use services::services::{
     analytics::{AnalyticsConfig, AnalyticsContext, AnalyticsService, generate_user_id},
     approvals::Approvals,
-    auth::AuthContext,
     config::{Config, load_config_from_file, save_config_to_file},
     container::ContainerService,
     events::EventService,
     file_search::FileSearchCache,
     filesystem::FilesystemService,
     image::ImageService,
-    oauth_credentials::OAuthCredentials,
     pr_monitor::PrMonitorService,
     project::ProjectService,
     queued_message::QueuedMessageService,
@@ -24,10 +21,7 @@ use services::services::{
     worktree_manager::WorktreeManager,
 };
 use tokio::sync::RwLock;
-use utils::{
-    assets::{config_path, credentials_path},
-    msg_store::MsgStore,
-};
+use utils::{assets::config_path, msg_store::MsgStore};
 
 use crate::{container::LocalContainerService, pty::PtyService};
 mod command;
@@ -51,7 +45,6 @@ pub struct LocalDeployment {
     file_search_cache: Arc<FileSearchCache>,
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
-    auth_context: AuthContext,
     pty: PtyService,
 }
 
@@ -124,14 +117,6 @@ impl Deployment for LocalDeployment {
         let approvals = Approvals::new(msg_stores.clone());
         let queued_message_service = QueuedMessageService::new();
 
-        let oauth_credentials = Arc::new(OAuthCredentials::new(credentials_path()));
-        if let Err(e) = oauth_credentials.load().await {
-            tracing::warn!(?e, "failed to load OAuth credentials");
-        }
-
-        let profile_cache = Arc::new(RwLock::new(None));
-        let auth_context = AuthContext::new(oauth_credentials.clone(), profile_cache.clone());
-
         // We need to make analytics accessible to the ContainerService
         // TODO: Handle this more gracefully
         let analytics_ctx = analytics.as_ref().map(|s| AnalyticsContext {
@@ -180,7 +165,6 @@ impl Deployment for LocalDeployment {
             file_search_cache,
             approvals,
             queued_message_service,
-            auth_context,
             pty,
         };
 
@@ -242,17 +226,9 @@ impl Deployment for LocalDeployment {
     fn queued_message_service(&self) -> &QueuedMessageService {
         &self.queued_message_service
     }
-
-    fn auth_context(&self) -> &AuthContext {
-        &self.auth_context
-    }
 }
 
 impl LocalDeployment {
-    pub async fn get_login_status(&self) -> LoginStatus {
-        LoginStatus::LoggedOut
-    }
-
     pub fn pty(&self) -> &PtyService {
         &self.pty
     }

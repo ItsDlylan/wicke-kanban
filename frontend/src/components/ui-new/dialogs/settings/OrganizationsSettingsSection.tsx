@@ -5,7 +5,6 @@ import {
   PlusIcon,
   UserPlusIcon,
   TrashIcon,
-  SignInIcon,
   ArrowSquareOutIcon,
   InfoIcon,
 } from '@phosphor-icons/react';
@@ -14,9 +13,6 @@ import { useOrganizationSelection } from '@/hooks/useOrganizationSelection';
 import { useOrganizationMembers } from '@/hooks/useOrganizationMembers';
 import { useOrganizationInvitations } from '@/hooks/useOrganizationInvitations';
 import { useOrganizationMutations } from '@/hooks/useOrganizationMutations';
-import { useUserSystem } from '@/components/ConfigProvider';
-import { useAuth } from '@/hooks/auth/useAuth';
-import { OAuthDialog } from '@/components/dialogs/global/OAuthDialog';
 import { CreateOrganizationDialog } from '@/components/dialogs/org/CreateOrganizationDialog';
 import { InviteMemberDialog } from '@/components/dialogs/org/InviteMemberDialog';
 import type {
@@ -41,8 +37,6 @@ import { SettingsCard, SettingsField } from './SettingsComponents';
 
 export function OrganizationsSettingsSection() {
   const { t } = useTranslation('organization');
-  const { loginStatus } = useUserSystem();
-  const { isSignedIn, isLoaded } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -68,8 +62,7 @@ export function OrganizationsSettingsSection() {
   const currentUserRole = selectedOrg?.user_role;
   const isAdmin = currentUserRole === MemberRoleEnum.ADMIN;
   const isPersonalOrg = selectedOrg?.is_personal ?? false;
-  const currentUserId =
-    loginStatus?.status === 'loggedin' ? loginStatus.profile.user_id : null;
+  const currentUserId = null;
 
   // Fetch members
   const { data: members = [], isLoading: loadingMembers } =
@@ -199,7 +192,7 @@ export function OrganizationsSettingsSection() {
     deleteOrganization.mutate(selectedOrgId);
   };
 
-  if (!isLoaded || orgsLoading) {
+  if (orgsLoading) {
     return (
       <div className="flex items-center justify-center py-8 gap-2">
         <SpinnerIcon
@@ -209,28 +202,6 @@ export function OrganizationsSettingsSection() {
         <span className="text-normal">
           {t('settings.loadingOrganizations')}
         </span>
-      </div>
-    );
-  }
-
-  if (!isSignedIn) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-base font-medium text-high">
-            {t('loginRequired.title')}
-          </h3>
-          <p className="text-sm text-low mt-1">
-            {t('loginRequired.description')}
-          </p>
-        </div>
-        <PrimaryButton
-          variant="secondary"
-          value={t('loginRequired.action')}
-          onClick={() => void OAuthDialog.show({})}
-        >
-          <SignInIcon className="size-icon-xs mr-1" weight="bold" />
-        </PrimaryButton>
       </div>
     );
   }

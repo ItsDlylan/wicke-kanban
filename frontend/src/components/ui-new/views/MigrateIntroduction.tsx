@@ -6,12 +6,10 @@ import {
   TreeStructureIcon,
   GitPullRequestIcon,
   CloudIcon,
-  SignInIcon,
 } from '@phosphor-icons/react';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
 
 interface MigrateIntroductionProps {
-  isSignedIn: boolean;
   onAction: () => void;
 }
 
@@ -48,10 +46,7 @@ const features = [
   },
 ];
 
-export function MigrateIntroduction({
-  isSignedIn,
-  onAction,
-}: MigrateIntroductionProps) {
+export function MigrateIntroduction({ onAction }: MigrateIntroductionProps) {
   return (
     <div className="max-w-2xl mx-auto py-double px-base">
       {/* Header section */}
@@ -101,15 +96,10 @@ export function MigrateIntroduction({
       {/* CTA */}
       <div className="pt-base border-t">
         <p className="text-sm text-normal mb-base">
-          {isSignedIn
-            ? 'Continue to select projects to migrate.'
-            : 'Sign in to migrate your local projects.'}
+          Continue to select projects to migrate.
         </p>
-        <PrimaryButton
-          onClick={onAction}
-          actionIcon={isSignedIn ? ArrowRightIcon : SignInIcon}
-        >
-          {isSignedIn ? 'Continue' : 'Sign In'}
+        <PrimaryButton onClick={onAction} actionIcon={ArrowRightIcon}>
+          Continue
         </PrimaryButton>
       </div>
     </div>

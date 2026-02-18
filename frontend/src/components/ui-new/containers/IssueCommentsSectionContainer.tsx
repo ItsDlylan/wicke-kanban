@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { IssueProvider, useIssueContext } from '@/contexts/remote/IssueContext';
 import { useOrgContext } from '@/contexts/remote/OrgContext';
 import { useProjectContext } from '@/contexts/remote/ProjectContext';
-import { useCurrentUser } from '@/hooks/auth/useCurrentUser';
 import { useAzureAttachments } from '@/hooks/useAzureAttachments';
 import { commitCommentAttachments, deleteAttachment } from '@/lib/remoteApi';
 import { extractAttachmentIds } from '@/lib/attachmentUtils';
@@ -39,8 +38,7 @@ function IssueCommentsSectionContent() {
   const { membersWithProfilesById } = useOrgContext();
   const { projectId } = useProjectContext();
   const issueContext = useIssueContext();
-  const { data: currentUser } = useCurrentUser();
-  const currentUserId = currentUser?.user_id ?? '';
+  const currentUserId = '';
 
   // Check if current user is admin
   const currentUserMember = currentUserId
