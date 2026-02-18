@@ -38,11 +38,11 @@ export type CreateTag = { tag_name: string, content: string, };
 
 export type UpdateTag = { tag_name: string | null, content: string | null, };
 
-export type TaskStatus = "backlog" | "todo" | "spec" | "plan" | "ralph" | "inreview" | "done" | "cancelled";
+export type TaskStatus = "backlog" | "plangenerating" | "ready" | "ralph" | "inprogress" | "qa" | "done" | "cancelled";
 
 export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, created_at: string, updated_at: string, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, created_at: string, updated_at: string, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, has_spec: boolean, has_children: boolean, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, created_at: string, updated_at: string, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
@@ -55,6 +55,12 @@ export type SpecSheet = { id: string, task_id: string, overview: string | null, 
 export type CreateSpecSheet = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
 
 export type UpdateSpecSheet = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
+
+export type RalphSession = { id: string, project_id: string, workspace_id: string | null, status: RalphSessionStatus, created_at: string, updated_at: string, };
+
+export type RalphSessionStatus = "pending" | "running" | "completed" | "failed";
+
+export type RalphSessionTask = { ralph_session_id: string, task_id: string, execution_order: number, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
@@ -309,6 +315,14 @@ export type ChildTaskWithDeps = { dependencies: Array<string>, is_ready: boolean
 export type SprintRepoInput = { repo_id: string, target_branch: string, };
 
 export type StartSprintRequest = { task_ids: Array<string>, executor_profile_id: ExecutorProfileId | null, repos: Array<SprintRepoInput>, };
+
+export type MakeRalphReadyRequest = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
+
+export type CreateRalphSessionRequest = { task_ids: Array<string>, repos: Array<SprintRepoInput>, executor_profile_id: ExecutorProfileId | null, };
+
+export type RalphSessionResponse = { session: RalphSession, tasks: Array<RalphSessionTask>, };
+
+export type GenerateSpecResponse = { overview: string, requirements: Array<string>, acceptance_criteria: Array<string>, constraints: Array<string>, tech_notes: string, };
 
 export type RunAgentSetupRequest = { executor_profile_id: ExecutorProfileId, };
 

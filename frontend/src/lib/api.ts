@@ -101,6 +101,10 @@ import {
   CreateSpecSheet,
   ChildTaskWithDeps,
   Diff,
+  MakeRalphReadyRequest,
+  RalphSessionResponse,
+  CreateRalphSessionRequest,
+  GenerateSpecResponse,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -407,6 +411,13 @@ export const specSheetsApi = {
     });
     return handleApiResponse<void>(response);
   },
+
+  generateSpec: async (taskId: string): Promise<GenerateSpecResponse> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/generate-spec`, {
+      method: 'POST',
+    });
+    return handleApiResponse<GenerateSpecResponse>(response);
+  },
 };
 
 export const planApi = {
@@ -466,6 +477,39 @@ export const decomposeApi = {
       }
     );
     return handleApiResponse<string>(response);
+  },
+};
+
+export const makeRalphReadyApi = {
+  makeReady: async (
+    taskId: string,
+    data: MakeRalphReadyRequest
+  ): Promise<Task[]> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/make-ralph-ready`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<Task[]>(response);
+  },
+};
+
+export const ralphSessionApi = {
+  create: async (
+    data: CreateRalphSessionRequest
+  ): Promise<RalphSessionResponse> => {
+    const response = await makeRequest(`/api/ralph-sessions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<RalphSessionResponse>(response);
+  },
+
+  get: async (sessionId: string): Promise<RalphSessionResponse> => {
+    const response = await makeRequest(`/api/ralph-sessions/${sessionId}`);
+    return handleApiResponse<RalphSessionResponse>(response);
   },
 };
 
