@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 
 use anyhow;
 use axum::{
@@ -22,13 +26,22 @@ use deployment::Deployment;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use serde::Serialize;
 use services::services::{file_search::SearchQuery, project::ProjectServiceError};
+use tokio::sync::RwLock;
 use ts_rs::TS;
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError, middleware::load_project_middleware};
 
-#[derive(Debug, Serialize, TS)]
+struct CachedStats {
+    stats: Vec<ProjectStats>,
+    cached_at: Instant,
+}
+
+static STATS_CACHE: OnceLock<RwLock<Option<CachedStats>>> = OnceLock::new();
+const STATS_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ProjectStats {
     pub project_id: Uuid,
@@ -455,6 +468,21 @@ pub async fn get_project_repository(
 pub async fn get_all_project_stats(
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<AllProjectStats>>, ApiError> {
+    let cache = STATS_CACHE.get_or_init(|| RwLock::new(None));
+
+    // Check cache under read lock
+    {
+        let guard = cache.read().await;
+        if let Some(ref cached) = *guard {
+            if cached.cached_at.elapsed() < STATS_CACHE_TTL {
+                return Ok(ResponseJson(ApiResponse::success(AllProjectStats {
+                    stats: cached.stats.clone(),
+                })));
+            }
+        }
+    }
+
+    // Cache miss or expired — recompute
     let projects = Project::find_all(&deployment.db().pool).await?;
     let git = deployment.git().clone();
     let pool = deployment.db().pool.clone();
@@ -524,6 +552,15 @@ pub async fn get_all_project_stats(
     })
     .await
     .map_err(|e| ApiError::BadRequest(format!("Stats computation failed: {}", e)))?;
+
+    // Store in cache
+    {
+        let mut guard = cache.write().await;
+        *guard = Some(CachedStats {
+            stats: stats.clone(),
+            cached_at: Instant::now(),
+        });
+    }
 
     Ok(ResponseJson(ApiResponse::success(AllProjectStats {
         stats,

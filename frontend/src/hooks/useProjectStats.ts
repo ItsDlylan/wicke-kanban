@@ -7,8 +7,8 @@ export function useAllProjectStats() {
   const query = useQuery({
     queryKey: ['projectStats'],
     queryFn: () => projectsApi.getStats(),
-    staleTime: 60_000,
-    refetchInterval: 300_000,
+    staleTime: 15 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   const statsMap = useMemo(() => {
