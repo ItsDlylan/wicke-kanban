@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_task_id = $1\n               ORDER BY sort_order ASC",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description,\n                      status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\",\n                      parent_workspace_id as \"parent_workspace_id: Uuid\",\n                      parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\",\n                      plan, plan_status, created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks WHERE plan_status = 'generating'",
   "describe": {
     "columns": [
       {
@@ -29,49 +29,55 @@
         "type_info": "Text"
       },
       {
-        "name": "parent_workspace_id: Uuid",
+        "name": "task_type!: TaskType",
         "ordinal": 5,
-        "type_info": "Blob"
+        "type_info": "Text"
       },
       {
-        "name": "parent_task_id: Uuid",
+        "name": "parent_workspace_id: Uuid",
         "ordinal": 6,
         "type_info": "Blob"
       },
       {
-        "name": "sort_order!: i32",
+        "name": "parent_task_id: Uuid",
         "ordinal": 7,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sort_order!: i32",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "plan",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "plan_status",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "plan_status",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 12,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       true,
       false,
       false,
       true,
+      false,
       false,
       true,
       true,
@@ -82,5 +88,5 @@
       false
     ]
   },
-  "hash": "d55b2204e3440d0a68a8d77102f30f9df42c44528110938de614d1d237100c9a"
+  "hash": "6ece0e5a22e1d754bc849436b35494f0c62f4786e77bfdd30c612bfc8451d33a"
 }

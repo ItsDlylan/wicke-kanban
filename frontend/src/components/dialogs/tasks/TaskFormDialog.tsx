@@ -61,8 +61,10 @@ interface Task {
   updated_at: string;
 }
 
+import type { TaskType } from 'shared/types';
+
 export type TaskFormDialogProps =
-  | { mode: 'create'; projectId: string }
+  | { mode: 'create'; projectId: string; taskType?: TaskType }
   | { mode: 'edit'; projectId: string; task: Task }
   | { mode: 'duplicate'; projectId: string; initialTask: Task }
   | {
@@ -181,11 +183,13 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
     } else {
       const imageIds =
         newlyUploadedImageIds.length > 0 ? newlyUploadedImageIds : null;
+      const isEpic = mode === 'create' && props.taskType === 'epic';
       const task = {
         project_id: projectId,
         title: value.title,
         description: value.description,
-        status: null,
+        status: isEpic ? ('idea' as TaskStatus) : null,
+        task_type: isEpic ? ('epic' as TaskType) : null,
         parent_workspace_id:
           mode === 'subtask' ? props.parentTaskAttemptId : null,
         parent_task_id: null,
@@ -509,6 +513,9 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                       <SelectItem value="cancelled">
                         {t('taskFormDialog.statusOptions.cancelled')}
                       </SelectItem>
+                      <SelectItem value="idea">Idea</SelectItem>
+                      <SelectItem value="planning">Planning</SelectItem>
+                      <SelectItem value="specreview">Spec Review</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -516,8 +523,8 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
             </form.Field>
           )}
 
-          {/* Create mode dropdowns */}
-          {!editMode && (
+          {/* Create mode dropdowns (hidden for epic creation) */}
+          {!editMode && !(mode === 'create' && props.taskType === 'epic') && (
             <form.Field name="autoStart" mode="array">
               {(autoStartField) => {
                 const isSingleRepo = repoBranchConfigs.length === 1;
@@ -642,30 +649,31 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
 
             {/* Autostart switch */}
             <div className="flex items-center gap-3">
-              {!editMode && (
-                <form.Field name="autoStart">
-                  {(field) => (
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="autostart-switch"
-                        checked={field.state.value}
-                        onCheckedChange={(checked) =>
-                          field.handleChange(checked)
-                        }
-                        disabled={isSubmitting}
-                        className="data-[state=checked]:bg-gray-900 dark:data-[state=checked]:bg-gray-100"
-                        aria-label={t('taskFormDialog.startLabel')}
-                      />
-                      <Label
-                        htmlFor="autostart-switch"
-                        className="text-sm cursor-pointer"
-                      >
-                        {t('taskFormDialog.startLabel')}
-                      </Label>
-                    </div>
-                  )}
-                </form.Field>
-              )}
+              {!editMode &&
+                !(mode === 'create' && props.taskType === 'epic') && (
+                  <form.Field name="autoStart">
+                    {(field) => (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="autostart-switch"
+                          checked={field.state.value}
+                          onCheckedChange={(checked) =>
+                            field.handleChange(checked)
+                          }
+                          disabled={isSubmitting}
+                          className="data-[state=checked]:bg-gray-900 dark:data-[state=checked]:bg-gray-100"
+                          aria-label={t('taskFormDialog.startLabel')}
+                        />
+                        <Label
+                          htmlFor="autostart-switch"
+                          className="text-sm cursor-pointer"
+                        >
+                          {t('taskFormDialog.startLabel')}
+                        </Label>
+                      </div>
+                    )}
+                  </form.Field>
+                )}
 
               {/* Create/Start/Update button*/}
               <form.Subscribe

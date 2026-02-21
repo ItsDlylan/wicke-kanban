@@ -86,6 +86,15 @@ const TASK_STATUSES = [
   'cancelled',
 ] as const;
 
+const PLANNING_STATUSES = [
+  'idea',
+  'planning',
+  'specreview',
+  'ready',
+  'ralph',
+  'done',
+] as const;
+
 const normalizeStatus = (status: string): TaskStatus =>
   status.toLowerCase() as TaskStatus;
 
@@ -167,11 +176,36 @@ export function ProjectTasks() {
     };
   }, [enableScope, disableScope]);
 
+  const board = (searchParams.get('board') ?? 'tasks') as 'tasks' | 'planning';
+  const isPlanningBoard = board === 'planning';
+  const activeStatuses = isPlanningBoard ? PLANNING_STATUSES : TASK_STATUSES;
+
+  const setBoard = useCallback(
+    (newBoard: 'tasks' | 'planning') => {
+      const params = new URLSearchParams(searchParams);
+      if (newBoard === 'tasks') {
+        params.delete('board');
+      } else {
+        params.set('board', newBoard);
+      }
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
   const handleCreateTask = useCallback(() => {
     if (projectId) {
-      openTaskForm({ mode: 'create', projectId });
+      if (isPlanningBoard) {
+        openTaskForm({
+          mode: 'create',
+          projectId,
+          taskType: 'epic',
+        });
+      } else {
+        openTaskForm({ mode: 'create', projectId });
+      }
     }
-  }, [projectId]);
+  }, [projectId, isPlanningBoard]);
   const { query: searchQuery, focusInput } = useSearch();
 
   const {
@@ -361,16 +395,10 @@ export function ProjectTasks() {
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
   const kanbanColumns = useMemo(() => {
-    const columns: KanbanColumns = {
-      backlog: [],
-      plangenerating: [],
-      ready: [],
-      ralph: [],
-      inprogress: [],
-      qa: [],
-      done: [],
-      cancelled: [],
-    };
+    const columns: KanbanColumns = {} as KanbanColumns;
+    for (const status of activeStatuses) {
+      columns[status] = [];
+    }
 
     const matchesSearch = (
       title: string,
@@ -386,7 +414,14 @@ export function ProjectTasks() {
     };
 
     tasks.forEach((task) => {
+      // Filter by task_type based on active board
+      if (isPlanningBoard && task.task_type !== 'epic') return;
+      if (!isPlanningBoard && task.task_type === 'epic') return;
+
       const statusKey = normalizeStatus(task.status);
+
+      // Only include statuses relevant to the active board
+      if (!(statusKey in columns)) return;
 
       if (!matchesSearch(task.title, task.description)) {
         return;
@@ -401,15 +436,22 @@ export function ProjectTasks() {
       columns[statusKey].push(task);
     });
 
-    TASK_STATUSES.forEach((status) => {
+    for (const status of activeStatuses) {
       columns[status].sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-    });
+    }
 
     return columns;
-  }, [hasSearch, normalizedSearch, tasks, tasksById]);
+  }, [
+    hasSearch,
+    normalizedSearch,
+    tasks,
+    tasksById,
+    isPlanningBoard,
+    activeStatuses,
+  ]);
 
   const childrenStats = useMemo(() => {
     const stats: Record<string, { done: number; total: number }> = {};
@@ -426,23 +468,14 @@ export function ProjectTasks() {
   }, [tasks, tasksById]);
 
   const visibleTasksByStatus = useMemo(() => {
-    const map: Record<TaskStatus, Task[]> = {
-      backlog: [],
-      plangenerating: [],
-      ready: [],
-      ralph: [],
-      inprogress: [],
-      qa: [],
-      done: [],
-      cancelled: [],
-    };
+    const map: Partial<Record<TaskStatus, Task[]>> = {};
 
-    TASK_STATUSES.forEach((status) => {
-      map[status] = kanbanColumns[status];
-    });
+    for (const status of activeStatuses) {
+      map[status] = kanbanColumns[status] ?? [];
+    }
 
-    return map;
-  }, [kanbanColumns]);
+    return map as Record<TaskStatus, Task[]>;
+  }, [kanbanColumns, activeStatuses]);
 
   const hasVisibleTasks = useMemo(
     () =>
@@ -625,7 +658,7 @@ export function ProjectTasks() {
         handleViewTaskDetails(tasksInStatus[currentIndex + 1]);
       }
     } else {
-      for (const status of TASK_STATUSES) {
+      for (const status of activeStatuses) {
         const tasks = visibleTasksByStatus[status];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
@@ -633,7 +666,12 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [
+    selectedTask,
+    visibleTasksByStatus,
+    handleViewTaskDetails,
+    activeStatuses,
+  ]);
 
   const selectPreviousTask = useCallback(() => {
     if (selectedTask) {
@@ -646,7 +684,7 @@ export function ProjectTasks() {
         handleViewTaskDetails(tasksInStatus[currentIndex - 1]);
       }
     } else {
-      for (const status of TASK_STATUSES) {
+      for (const status of activeStatuses) {
         const tasks = visibleTasksByStatus[status];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
@@ -654,23 +692,28 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [
+    selectedTask,
+    visibleTasksByStatus,
+    handleViewTaskDetails,
+    activeStatuses,
+  ]);
 
   const selectNextColumn = useCallback(() => {
     if (selectedTask) {
       const currentStatus = normalizeStatus(selectedTask.status);
-      const currentIndex = TASK_STATUSES.findIndex(
+      const currentIndex = activeStatuses.findIndex(
         (status) => status === currentStatus
       );
-      for (let i = currentIndex + 1; i < TASK_STATUSES.length; i++) {
-        const tasks = visibleTasksByStatus[TASK_STATUSES[i]];
+      for (let i = currentIndex + 1; i < activeStatuses.length; i++) {
+        const tasks = visibleTasksByStatus[activeStatuses[i]];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
           return;
         }
       }
     } else {
-      for (const status of TASK_STATUSES) {
+      for (const status of activeStatuses) {
         const tasks = visibleTasksByStatus[status];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
@@ -678,23 +721,28 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [
+    selectedTask,
+    visibleTasksByStatus,
+    handleViewTaskDetails,
+    activeStatuses,
+  ]);
 
   const selectPreviousColumn = useCallback(() => {
     if (selectedTask) {
       const currentStatus = normalizeStatus(selectedTask.status);
-      const currentIndex = TASK_STATUSES.findIndex(
+      const currentIndex = activeStatuses.findIndex(
         (status) => status === currentStatus
       );
       for (let i = currentIndex - 1; i >= 0; i--) {
-        const tasks = visibleTasksByStatus[TASK_STATUSES[i]];
+        const tasks = visibleTasksByStatus[activeStatuses[i]];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
           return;
         }
       }
     } else {
-      for (const status of TASK_STATUSES) {
+      for (const status of activeStatuses) {
         const tasks = visibleTasksByStatus[status];
         if (tasks && tasks.length > 0) {
           handleViewTaskDetails(tasks[0]);
@@ -702,7 +750,12 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [
+    selectedTask,
+    visibleTasksByStatus,
+    handleViewTaskDetails,
+    activeStatuses,
+  ]);
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -762,6 +815,31 @@ export function ProjectTasks() {
       ? `${truncated.substring(0, lastSpace)}...`
       : `${truncated}...`;
   };
+
+  const boardToggle = (
+    <div className="flex gap-1 px-4 pt-3 pb-1">
+      <button
+        onClick={() => setBoard('tasks')}
+        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+          !isPlanningBoard
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        }`}
+      >
+        Tasks
+      </button>
+      <button
+        onClick={() => setBoard('planning')}
+        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+          isPlanningBoard
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        }`}
+      >
+        Planning
+      </button>
+    </div>
+  );
 
   const kanbanContent =
     tasks.length === 0 ? (
@@ -905,6 +983,13 @@ export function ProjectTasks() {
       <div className="relative h-full w-full" />
     );
 
+  const kanbanWithToggle = (
+    <div className="flex flex-col h-full min-h-0">
+      {boardToggle}
+      <div className="flex-1 min-h-0">{kanbanContent}</div>
+    </div>
+  );
+
   const attemptArea = (
     <GitOperationsProvider attemptId={attempt?.id}>
       <ClickedElementsProvider attempt={attempt}>
@@ -914,7 +999,7 @@ export function ProjectTasks() {
             sessionId={attempt?.session?.id}
           >
             <TasksLayout
-              kanban={kanbanContent}
+              kanban={kanbanWithToggle}
               attempt={attemptContent}
               aux={auxContent}
               isPanelOpen={isPanelOpen}

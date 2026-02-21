@@ -939,6 +939,8 @@ export const Actions = {
           has_in_progress_attempt: false,
           last_attempt_failed: false,
           executor: '',
+          has_spec: false,
+          has_children: false,
         },
         repoId,
         targetBranch: repo?.target_branch,

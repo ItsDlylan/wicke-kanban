@@ -108,6 +108,14 @@ export function TaskCard({
                   <XCircle className="h-3.5 w-3.5 text-red-500" />
                 </span>
               )}
+              {task.task_type === 'epic' && (
+                <span
+                  title="Epic"
+                  className="text-[10px] font-bold text-purple-600 bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400 px-1 rounded"
+                >
+                  E
+                </span>
+              )}
               {task.has_spec && task.has_children && (
                 <span
                   title="Ralph Ready"

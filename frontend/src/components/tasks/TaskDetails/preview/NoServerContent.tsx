@@ -61,6 +61,7 @@ export function NoServerContent({
         title: COMPANION_INSTALL_TASK_TITLE,
         description: COMPANION_INSTALL_TASK_DESCRIPTION,
         status: null,
+        task_type: null,
         parent_workspace_id: null,
         parent_task_id: null,
         image_ids: null,

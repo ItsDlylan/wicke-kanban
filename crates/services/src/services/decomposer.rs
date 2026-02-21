@@ -215,6 +215,7 @@ pub async fn create_child_tasks(
             title: story.title.clone(),
             description: Some(story.description.clone()),
             status: Some(TaskStatus::Ready),
+            task_type: None,
             parent_workspace_id: None,
             parent_task_id: Some(parent_task_id),
             image_ids: None,

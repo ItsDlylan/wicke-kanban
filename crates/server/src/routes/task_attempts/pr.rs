@@ -695,6 +695,7 @@ pub async fn create_workspace_from_pr(
             payload.pr_number, payload.pr_url
         )),
         status: Some(TaskStatus::Ralph),
+        task_type: None,
         parent_workspace_id: None,
         parent_task_id: None,
         image_ids: None,

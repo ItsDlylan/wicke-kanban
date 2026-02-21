@@ -103,6 +103,9 @@ import {
   CreateRalphSessionRequest,
   GenerateSpecResponse,
   AllProjectStats,
+  PlanningSession,
+  CreatePlanningSession,
+  UpdatePlanningSession,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -513,6 +516,55 @@ export const ralphSessionApi = {
   get: async (sessionId: string): Promise<RalphSessionResponse> => {
     const response = await makeRequest(`/api/ralph-sessions/${sessionId}`);
     return handleApiResponse<RalphSessionResponse>(response);
+  },
+};
+
+// Planning Sessions API
+export const planningSessionsApi = {
+  list: async (taskId: string): Promise<PlanningSession[]> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/planning-sessions`
+    );
+    return handleApiResponse<PlanningSession[]>(response);
+  },
+
+  create: async (
+    taskId: string,
+    data: CreatePlanningSession
+  ): Promise<PlanningSession> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/planning-sessions`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<PlanningSession>(response);
+  },
+
+  update: async (
+    taskId: string,
+    sessionId: string,
+    data: UpdatePlanningSession
+  ): Promise<PlanningSession> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/planning-sessions/${sessionId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<PlanningSession>(response);
+  },
+
+  delete: async (taskId: string, sessionId: string): Promise<void> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/planning-sessions/${sessionId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return handleApiResponse<void>(response);
   },
 };
 

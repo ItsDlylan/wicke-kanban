@@ -9,6 +9,9 @@ export const statusLabels: Record<TaskStatus, string> = {
   qa: 'Q/A',
   done: 'Done',
   cancelled: 'Cancelled',
+  idea: 'Idea',
+  planning: 'Planning',
+  specreview: 'Spec Review',
 };
 
 export const statusBoardColors: Record<TaskStatus, string> = {
@@ -20,4 +23,7 @@ export const statusBoardColors: Record<TaskStatus, string> = {
   qa: '--warning',
   done: '--success',
   cancelled: '--destructive',
+  idea: '--info',
+  planning: '--warning',
+  specreview: '--info',
 };

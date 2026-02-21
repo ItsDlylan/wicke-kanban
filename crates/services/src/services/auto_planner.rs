@@ -2,11 +2,14 @@ use std::path::Path;
 
 use db::models::{
     project_repo::ProjectRepo,
+    spec_sheet::{CreateSpecSheet, SpecSheet},
     task::{Task, TaskStatus},
 };
 use sqlx::SqlitePool;
 use thiserror::Error;
 use uuid::Uuid;
+
+use super::{decomposer, spec_generator};
 
 #[derive(Debug, Error)]
 pub enum AutoPlannerError {
@@ -170,11 +173,26 @@ pub fn spawn_auto_plan(
 
         match result {
             Ok(Ok(plan_text)) => {
-                // Success: store plan and transition to Plan status
+                // Success: store plan
                 if let Err(e) = Task::update_plan(&pool, task_id, &plan_text, "completed").await {
                     tracing::error!("Failed to store plan for task {}: {}", task_id, e);
                     return;
                 }
+
+                // Auto-generate spec sheet and decompose into child tasks
+                // so the task is prepared for Ralph execution.
+                // Failures here are non-fatal — the task still transitions to Ready.
+                auto_prepare_for_ralph(
+                    &pool,
+                    task_id,
+                    project_id,
+                    &title,
+                    description.as_deref(),
+                    &plan_text,
+                    &working_dir,
+                )
+                .await;
+
                 if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
                     tracing::error!(
                         "Failed to transition task {} to Ready status: {}",
@@ -204,4 +222,130 @@ pub fn spawn_auto_plan(
             }
         }
     });
+}
+
+/// After plan generation succeeds, automatically generate a spec sheet and decompose the task
+/// into child tasks so it's prepared for Ralph execution. Failures are logged but non-fatal.
+async fn auto_prepare_for_ralph(
+    pool: &SqlitePool,
+    task_id: Uuid,
+    project_id: Uuid,
+    title: &str,
+    description: Option<&str>,
+    plan_text: &str,
+    working_dir: &Path,
+) {
+    // Step 1: Generate spec sheet via Claude
+    let spec_prompt =
+        spec_generator::build_spec_generation_prompt(title, description, Some(plan_text));
+    let spec_working_path = working_dir.to_path_buf();
+
+    let spec_result = tokio::task::spawn_blocking(move || {
+        spec_generator::run_spec_generation(&spec_prompt, &spec_working_path)
+    })
+    .await;
+
+    let spec = match spec_result {
+        Ok(Ok(raw_output)) => match spec_generator::parse_spec_output(&raw_output) {
+            Ok(spec) => spec,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse auto-generated spec for task {}: {}",
+                    task_id,
+                    e
+                );
+                return;
+            }
+        },
+        Ok(Err(e)) => {
+            tracing::warn!("Auto spec generation failed for task {}: {}", task_id, e);
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Auto spec generation task panicked for task {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+    };
+
+    // Step 2: Store the spec sheet
+    let spec_data = CreateSpecSheet {
+        overview: Some(spec.overview),
+        requirements: Some(serde_json::to_string(&spec.requirements).unwrap_or_default()),
+        acceptance_criteria: Some(
+            serde_json::to_string(&spec.acceptance_criteria).unwrap_or_default(),
+        ),
+        constraints: Some(serde_json::to_string(&spec.constraints).unwrap_or_default()),
+        tech_notes: Some(spec.tech_notes),
+    };
+
+    let stored_spec = match SpecSheet::upsert(pool, task_id, &spec_data).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to store auto-generated spec for task {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+    };
+
+    tracing::info!("Auto-generated spec sheet for task {}", task_id);
+
+    // Step 3: Decompose into child tasks
+    let decompose_prompt = decomposer::generate_decomposition_prompt(&stored_spec, title);
+    let decompose_working_path = working_dir.to_path_buf();
+
+    let decompose_result = tokio::task::spawn_blocking(move || {
+        decomposer::run_decomposition(&decompose_prompt, &decompose_working_path)
+    })
+    .await;
+
+    let decomposition = match decompose_result {
+        Ok(Ok(raw_output)) => match decomposer::parse_decomposition_output(&raw_output) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse auto-decomposition for task {}: {}",
+                    task_id,
+                    e
+                );
+                return;
+            }
+        },
+        Ok(Err(e)) => {
+            tracing::warn!("Auto decomposition failed for task {}: {}", task_id, e);
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Auto decomposition task panicked for task {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+    };
+
+    // Step 4: Create child tasks
+    match decomposer::create_child_tasks(pool, project_id, task_id, &decomposition).await {
+        Ok(children) => {
+            tracing::info!(
+                "Auto-decomposed task {} into {} child tasks",
+                task_id,
+                children.len()
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to create child tasks for auto-decomposition of task {}: {}",
+                task_id,
+                e
+            );
+        }
+    }
 }

@@ -44,6 +44,9 @@ export const useProjectTasks = (projectId: string): UseProjectTasksResult => {
       qa: [],
       done: [],
       cancelled: [],
+      idea: [],
+      planning: [],
+      specreview: [],
     };
 
     Object.values(merged).forEach((task) => {

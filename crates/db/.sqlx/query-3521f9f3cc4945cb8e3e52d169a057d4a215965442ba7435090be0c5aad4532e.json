@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description,\n                      status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\",\n                      parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\",\n                      plan, plan_status, created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks WHERE plan_status = 'generating'",
+  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.task_type as \"task_type!: TaskType\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.plan, t.plan_status, t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'ready'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -29,49 +29,55 @@
         "type_info": "Text"
       },
       {
-        "name": "parent_workspace_id: Uuid",
+        "name": "task_type!: TaskType",
         "ordinal": 5,
-        "type_info": "Blob"
+        "type_info": "Text"
       },
       {
-        "name": "parent_task_id: Uuid",
+        "name": "parent_workspace_id: Uuid",
         "ordinal": 6,
         "type_info": "Blob"
       },
       {
-        "name": "sort_order!: i32",
+        "name": "parent_task_id: Uuid",
         "ordinal": 7,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sort_order!: i32",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "plan",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "plan_status",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "plan_status",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 12,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
       false,
       false,
       true,
+      false,
       false,
       true,
       true,
@@ -82,5 +88,5 @@
       false
     ]
   },
-  "hash": "b89203236ee685219b59a5aefe6fa6d416ed327c8d5a0cf5d74809d1763aa4cc"
+  "hash": "3521f9f3cc4945cb8e3e52d169a057d4a215965442ba7435090be0c5aad4532e"
 }

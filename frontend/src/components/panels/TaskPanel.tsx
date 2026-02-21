@@ -15,6 +15,7 @@ import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDia
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
 import { statusLabels } from '@/utils/statusLabels';
+import { PlanningSessionsPanel } from './PlanningSessionsPanel';
 
 interface TaskPanelProps {
   task: TaskWithAttemptStatus | null;
@@ -30,6 +31,9 @@ const statusBadgeColors: Record<string, string> = {
   cancelled: 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200',
   plangenerating:
     'bg-purple-200 text-purple-800 dark:bg-purple-800 dark:text-purple-200',
+  idea: 'bg-sky-200 text-sky-800 dark:bg-sky-800 dark:text-sky-200',
+  planning: 'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200',
+  specreview: 'bg-sky-200 text-sky-800 dark:bg-sky-800 dark:text-sky-200',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -165,6 +169,10 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
           </div>
 
           <div className="mt-6 flex-shrink-0 space-y-4">
+            {task.task_type === 'epic' && (
+              <PlanningSessionsPanel taskId={task.id} />
+            )}
+
             {task.has_children && (
               <DataTable
                 data={children ?? []}
