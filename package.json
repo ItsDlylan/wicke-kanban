@@ -34,7 +34,10 @@
     "remote:dev": "cd crates/remote && docker compose --env-file .env.remote up --build ; docker compose down -v",
     "remote:dev:clean": "cd crates/remote && docker compose --env-file .env.remote down -v",
     "remote:prepare-db": "cd crates/remote && bash scripts/prepare-db.sh",
-    "remote:prepare-db:check": "cd crates/remote && bash scripts/prepare-db.sh --check"
+    "remote:prepare-db:check": "cd crates/remote && bash scripts/prepare-db.sh --check",
+    "remotion:preview": "cd remotion && npx remotion preview src/Root.tsx",
+    "remotion:render": "cd remotion && npx remotion render src/Root.tsx",
+    "remotion:render:all": "cd remotion && pnpm run render:all"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

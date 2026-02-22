@@ -654,6 +654,7 @@
         "description": "Once decomposed, start a Ralph session. Ralph picks up each child story in order, creates branches, writes code, and opens PRs. You review the results while Ralph works through the queue autonomously."
       }
     },
+    "replayTutorial": "Replay tutorial",
     "buttons": {
       "previous": "Previous",
       "next": "Next",

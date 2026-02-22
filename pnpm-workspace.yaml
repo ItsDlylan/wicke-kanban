@@ -1,6 +1,7 @@
 packages:
   - frontend
   - remote-frontend
+  - remotion
 
 onlyBuiltDependencies:
   - '@sentry/cli'

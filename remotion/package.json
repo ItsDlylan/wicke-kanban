@@ -1,0 +1,23 @@
+{
+  "name": "@wickeban/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "preview": "npx remotion preview src/Root.tsx",
+    "render": "npx remotion render src/Root.tsx",
+    "render:all": "npx remotion render src/Root.tsx Overview --output out/overview.mp4 && npx remotion render src/Root.tsx CreateEpic --output out/create-epic.mp4 && npx remotion render src/Root.tsx PlanWithClaude --output out/plan-with-claude.mp4 && npx remotion render src/Root.tsx SpecDecompose --output out/spec-decompose.mp4 && npx remotion render src/Root.tsx RalphExecutes --output out/ralph-executes.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}

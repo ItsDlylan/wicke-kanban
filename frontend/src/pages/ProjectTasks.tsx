@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, PlayCircle, Plus } from 'lucide-react';
 import { PlanningEmptyState } from '@/components/tasks/PlanningEmptyState';
 import { Loader } from '@/components/ui/loader';
 import { tasksApi } from '@/lib/api';
@@ -284,6 +284,15 @@ export function ProjectTasks() {
     planningShowcaseId,
     markSeen,
   ]);
+
+  const replayShowcase = useCallback(() => {
+    const config = isPlanningBoard
+      ? showcases.planningBoard
+      : showcases.taskPanel;
+    FeatureShowcaseDialog.show({ config }).finally(() => {
+      FeatureShowcaseDialog.hide();
+    });
+  }, [isPlanningBoard]);
 
   const isLatest = attemptId === 'latest';
   const { data: attempts = [], isLoading: isAttemptsLoading } = useTaskAttempts(
@@ -888,6 +897,14 @@ export function ProjectTasks() {
             ({epicCount})
           </span>
         )}
+      </button>
+      <button
+        type="button"
+        onClick={replayShowcase}
+        title={t('showcases.replayTutorial')}
+        className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+      >
+        <PlayCircle className="h-4 w-4" />
       </button>
     </div>
   );

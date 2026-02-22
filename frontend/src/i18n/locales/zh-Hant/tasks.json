@@ -533,6 +533,7 @@
         "description": "將自訂提示儲存為標籤，並可嵌入新任務或後續訊息。重用常見指示以維持一致流程。"
       }
     },
+    "replayTutorial": "重播教學",
     "buttons": {
       "previous": "上一個",
       "next": "下一個",

@@ -533,6 +533,7 @@
         "description": "Guarda prompts personalizados como etiquetas e insértalos en nuevas tareas o mensajes de seguimiento. Reutiliza instrucciones comunes para mantener la consistencia en tu flujo de trabajo."
       }
     },
+    "replayTutorial": "Repetir tutorial",
     "buttons": {
       "previous": "Anterior",
       "next": "Siguiente",

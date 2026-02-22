@@ -610,6 +610,7 @@
         "description": "Enregistrez des prompts personnalisés comme tags et intégrez-les dans de nouvelles tâches ou messages de suivi. Réutilisez les instructions courantes pour maintenir la cohérence de votre workflow."
       }
     },
+    "replayTutorial": "Rejouer le tutoriel",
     "buttons": {
       "previous": "Précédent",
       "next": "Suivant",
