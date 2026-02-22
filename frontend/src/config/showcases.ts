@@ -1,4 +1,6 @@
+import { createElement } from 'react';
 import { ShowcaseConfig } from '@/types/showcase';
+import { PlanningShowcaseIllustration } from '@/components/showcase/PlanningShowcaseIllustration';
 
 export const showcases = {
   taskPanel: {
@@ -42,6 +44,53 @@ export const showcases = {
         media: {
           type: 'video',
           src: 'https://vkcdn.britannio.dev/showcase/flat-task-panel/vk-tags.mp4',
+        },
+      },
+    ],
+  } satisfies ShowcaseConfig,
+
+  planningBoard: {
+    id: 'planning-board-onboarding',
+    stages: [
+      {
+        titleKey: 'showcases.planningBoard.overview.title',
+        descriptionKey: 'showcases.planningBoard.overview.description',
+        media: {
+          type: 'component' as const,
+          render: () => createElement(PlanningShowcaseIllustration, { step: 'overview' }),
+        },
+      },
+      {
+        titleKey: 'showcases.planningBoard.createEpic.title',
+        descriptionKey: 'showcases.planningBoard.createEpic.description',
+        media: {
+          type: 'component' as const,
+          render: () => createElement(PlanningShowcaseIllustration, { step: 'createEpic' }),
+        },
+      },
+      {
+        titleKey: 'showcases.planningBoard.planWithClaude.title',
+        descriptionKey: 'showcases.planningBoard.planWithClaude.description',
+        media: {
+          type: 'component' as const,
+          render: () => createElement(PlanningShowcaseIllustration, { step: 'planWithClaude' }),
+        },
+      },
+      {
+        titleKey: 'showcases.planningBoard.specAndDecompose.title',
+        descriptionKey: 'showcases.planningBoard.specAndDecompose.description',
+        media: {
+          type: 'component' as const,
+          render: () =>
+            createElement(PlanningShowcaseIllustration, { step: 'specAndDecompose' }),
+        },
+      },
+      {
+        titleKey: 'showcases.planningBoard.ralph.title',
+        descriptionKey: 'showcases.planningBoard.ralph.description',
+        media: {
+          type: 'component' as const,
+          render: () => createElement(PlanningShowcaseIllustration, { step: 'ralph' }),
         },
       },
     ],

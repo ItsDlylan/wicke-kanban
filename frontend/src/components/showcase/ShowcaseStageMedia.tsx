@@ -29,6 +29,14 @@ export function ShowcaseStageMedia({ media }: ShowcaseStageMediaProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
 
+  if (media.type === 'component') {
+    return (
+      <div className="relative w-full aspect-[16/10] bg-muted flex items-center justify-center">
+        {media.render()}
+      </div>
+    );
+  }
+
   if (media.type === 'video') {
     const handleReplay = () => {
       if (videoRef.current) {

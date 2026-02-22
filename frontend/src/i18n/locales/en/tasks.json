@@ -632,6 +632,28 @@
         "description": "Save custom prompts as tags and embed them within new tasks or follow-up messages. Reuse common instructions to maintain consistency across your workflow."
       }
     },
+    "planningBoard": {
+      "overview": {
+        "title": "Welcome to the Planning Board",
+        "description": "The Planning Board is where you manage larger features (epics) that need human-driven planning before autonomous execution. Epics flow through a dedicated pipeline: from idea capture through iterative planning sessions to spec generation and Ralph execution."
+      },
+      "createEpic": {
+        "title": "Start with an Idea",
+        "description": "Create an epic from the Planning tab. Give it a title and description — it lands in the Idea column. Unlike regular tasks, epics skip auto-plan generation so you stay in control of the scoping process."
+      },
+      "planWithClaude": {
+        "title": "Plan Iteratively with Claude Code",
+        "description": "Move epics to Planning and link Claude Code sessions as you iterate on the approach. Each session reference is saved so you have a log of planning decisions. When the scope feels solid, move to Spec Review."
+      },
+      "specAndDecompose": {
+        "title": "Generate Spec & Decompose",
+        "description": "Use 'Make Ralph Ready' to generate a spec sheet from your planning work, then decompose it into small child stories. Review the breakdown — each story should be small enough for a coding agent to handle independently."
+      },
+      "ralph": {
+        "title": "Let Ralph Handle Execution",
+        "description": "Once decomposed, start a Ralph session. Ralph picks up each child story in order, creates branches, writes code, and opens PRs. You review the results while Ralph works through the queue autonomously."
+      }
+    },
     "buttons": {
       "previous": "Previous",
       "next": "Next",

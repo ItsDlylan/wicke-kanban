@@ -77,8 +77,6 @@ import { cn } from '@/lib/utils';
 
 type Task = TaskWithAttemptStatus;
 
-type BoardMode = 'tasks' | 'planning';
-
 const TASK_STATUSES = [
   'backlog',
   'plangenerating',
@@ -237,30 +235,54 @@ export function ProjectTasks() {
   const { config, updateAndSaveConfig, loading } = useUserSystem();
 
   const isLoaded = !loading;
-  const showcaseId = showcases.taskPanel.id;
   const seenFeatures = useMemo(
     () => config?.showcases?.seen_features ?? [],
     [config?.showcases?.seen_features]
   );
-  const seen = isLoaded && seenFeatures.includes(showcaseId);
+
+  const markSeen = useCallback(
+    (id: string) => {
+      if (seenFeatures.includes(id)) return;
+      void updateAndSaveConfig({
+        showcases: { seen_features: [...seenFeatures, id] },
+      });
+    },
+    [seenFeatures, updateAndSaveConfig]
+  );
+
+  // Task panel onboarding showcase
+  const taskShowcaseId = showcases.taskPanel.id;
+  const taskShowcaseSeen = isLoaded && seenFeatures.includes(taskShowcaseId);
 
   useEffect(() => {
-    if (!isLoaded || !isPanelOpen || seen) return;
+    if (!isLoaded || !isPanelOpen || taskShowcaseSeen) return;
 
     FeatureShowcaseDialog.show({ config: showcases.taskPanel }).finally(() => {
       FeatureShowcaseDialog.hide();
-      if (seenFeatures.includes(showcaseId)) return;
-      void updateAndSaveConfig({
-        showcases: { seen_features: [...seenFeatures, showcaseId] },
-      });
+      markSeen(taskShowcaseId);
+    });
+  }, [isLoaded, isPanelOpen, taskShowcaseSeen, taskShowcaseId, markSeen]);
+
+  // Planning board onboarding showcase
+  const planningShowcaseId = showcases.planningBoard.id;
+  const planningShowcaseSeen =
+    isLoaded && seenFeatures.includes(planningShowcaseId);
+
+  useEffect(() => {
+    if (!isLoaded || !isPlanningBoard || planningShowcaseSeen) return;
+
+    FeatureShowcaseDialog.show({
+      config: showcases.planningBoard,
+    }).finally(() => {
+      FeatureShowcaseDialog.hide();
+      markSeen(planningShowcaseId);
     });
   }, [
     isLoaded,
-    isPanelOpen,
-    seen,
-    showcaseId,
-    updateAndSaveConfig,
-    seenFeatures,
+    isPlanningBoard,
+    planningShowcaseSeen,
+    planningShowcaseId,
+    markSeen,
   ]);
 
   const isLatest = attemptId === 'latest';
@@ -348,9 +370,6 @@ export function ProjectTasks() {
   const rawMode = searchParams.get('view') as LayoutMode;
   const mode: LayoutMode =
     rawMode === 'preview' || rawMode === 'diffs' ? rawMode : null;
-
-  const board = searchParams.get('board');
-  const isPlanningBoard = board === 'planning';
 
   // TODO: Remove this redirect after v0.1.0 (legacy URL support for bookmarked links)
   // Migrates old `view=logs` to `view=diffs`
