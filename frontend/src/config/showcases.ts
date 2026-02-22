@@ -1,6 +1,6 @@
-import { createElement } from 'react';
 import { ShowcaseConfig } from '@/types/showcase';
-import { PlanningShowcaseIllustration } from '@/components/showcase/PlanningShowcaseIllustration';
+
+const PLANNING_VIDEO_BASE = '/showcase/planning-board';
 
 export const showcases = {
   taskPanel: {
@@ -56,41 +56,40 @@ export const showcases = {
         titleKey: 'showcases.planningBoard.overview.title',
         descriptionKey: 'showcases.planningBoard.overview.description',
         media: {
-          type: 'component' as const,
-          render: () => createElement(PlanningShowcaseIllustration, { step: 'overview' }),
+          type: 'video' as const,
+          src: `${PLANNING_VIDEO_BASE}/overview.mp4`,
         },
       },
       {
         titleKey: 'showcases.planningBoard.createEpic.title',
         descriptionKey: 'showcases.planningBoard.createEpic.description',
         media: {
-          type: 'component' as const,
-          render: () => createElement(PlanningShowcaseIllustration, { step: 'createEpic' }),
+          type: 'video' as const,
+          src: `${PLANNING_VIDEO_BASE}/create-epic.mp4`,
         },
       },
       {
         titleKey: 'showcases.planningBoard.planWithClaude.title',
         descriptionKey: 'showcases.planningBoard.planWithClaude.description',
         media: {
-          type: 'component' as const,
-          render: () => createElement(PlanningShowcaseIllustration, { step: 'planWithClaude' }),
+          type: 'video' as const,
+          src: `${PLANNING_VIDEO_BASE}/plan-with-claude.mp4`,
         },
       },
       {
         titleKey: 'showcases.planningBoard.specAndDecompose.title',
         descriptionKey: 'showcases.planningBoard.specAndDecompose.description',
         media: {
-          type: 'component' as const,
-          render: () =>
-            createElement(PlanningShowcaseIllustration, { step: 'specAndDecompose' }),
+          type: 'video' as const,
+          src: `${PLANNING_VIDEO_BASE}/spec-decompose.mp4`,
         },
       },
       {
         titleKey: 'showcases.planningBoard.ralph.title',
         descriptionKey: 'showcases.planningBoard.ralph.description',
         media: {
-          type: 'component' as const,
-          render: () => createElement(PlanningShowcaseIllustration, { step: 'ralph' }),
+          type: 'video' as const,
+          src: `${PLANNING_VIDEO_BASE}/ralph-executes.mp4`,
         },
       },
     ],
