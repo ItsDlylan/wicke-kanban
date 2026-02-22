@@ -52,6 +52,104 @@ pub async fn recover_stuck_plans(pool: &SqlitePool) {
     }
 }
 
+/// Recover tasks whose plan completed but the server restarted before auto_prepare_for_ralph
+/// could finish (spec generation, decomposition) and transition to Ready.
+/// These tasks have status = PlanGenerating + plan_status = "completed".
+pub async fn recover_stuck_plan_completed(pool: &SqlitePool) {
+    match Task::find_stuck_plan_completed(pool).await {
+        Ok(tasks) if !tasks.is_empty() => {
+            tracing::info!(
+                "Recovering {} task(s) with completed plan but stuck in PlanGenerating status",
+                tasks.len()
+            );
+            for task in tasks {
+                let plan_text = match &task.plan {
+                    Some(p) => p.clone(),
+                    None => {
+                        tracing::warn!(
+                            "Task {} has plan_status=completed but no plan text, transitioning to Ready",
+                            task.id
+                        );
+                        let _ = Task::update_status(pool, task.id, TaskStatus::Ready).await;
+                        continue;
+                    }
+                };
+                spawn_post_plan_recovery(
+                    pool.clone(),
+                    task.id,
+                    task.project_id,
+                    task.title,
+                    task.description,
+                    plan_text,
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::error!("Failed to recover stuck plan-completed tasks: {}", e);
+        }
+    }
+}
+
+/// Re-run auto_prepare_for_ralph for a task whose plan completed but got interrupted.
+/// Skips spec/decompose steps if they already succeeded (idempotent).
+fn spawn_post_plan_recovery(
+    pool: SqlitePool,
+    task_id: Uuid,
+    project_id: Uuid,
+    title: String,
+    description: Option<String>,
+    plan_text: String,
+) {
+    tokio::spawn(async move {
+        // Get working directory from project repos
+        let working_dir = match ProjectRepo::find_repos_for_project(&pool, project_id).await {
+            Ok(repos) if !repos.is_empty() => repos[0].path.clone(),
+            Ok(_) => {
+                tracing::warn!(
+                    "No repos found for project {} during recovery of task {}, transitioning to Ready",
+                    project_id,
+                    task_id
+                );
+                let _ = Task::update_status(&pool, task_id, TaskStatus::Ready).await;
+                return;
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to find repos during recovery for task {}: {}",
+                    task_id,
+                    e
+                );
+                let _ = Task::update_status(&pool, task_id, TaskStatus::Ready).await;
+                return;
+            }
+        };
+
+        auto_prepare_for_ralph(
+            &pool,
+            task_id,
+            project_id,
+            &title,
+            description.as_deref(),
+            &plan_text,
+            &working_dir,
+        )
+        .await;
+
+        if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
+            tracing::error!(
+                "Failed to transition recovered task {} to Ready status: {}",
+                task_id,
+                e
+            );
+        }
+        tracing::info!(
+            "Successfully recovered task {} from stuck PlanGenerating state",
+            task_id
+        );
+    });
+}
+
 /// Build a prompt that instructs Claude to analyze the codebase and produce a step-by-step
 /// implementation plan from a task's title and description.
 pub fn build_auto_plan_prompt(title: &str, description: Option<&str>) -> String {
@@ -226,6 +324,7 @@ pub fn spawn_auto_plan(
 
 /// After plan generation succeeds, automatically generate a spec sheet and decompose the task
 /// into child tasks so it's prepared for Ralph execution. Failures are logged but non-fatal.
+/// This function is idempotent — it skips steps that have already completed (e.g. on recovery).
 async fn auto_prepare_for_ralph(
     pool: &SqlitePool,
     task_id: Uuid,
@@ -235,66 +334,92 @@ async fn auto_prepare_for_ralph(
     plan_text: &str,
     working_dir: &Path,
 ) {
-    // Step 1: Generate spec sheet via Claude
-    let spec_prompt =
-        spec_generator::build_spec_generation_prompt(title, description, Some(plan_text));
-    let spec_working_path = working_dir.to_path_buf();
+    // Step 1: Check if spec already exists (idempotent on recovery)
+    let stored_spec = match SpecSheet::find_by_task_id(pool, task_id).await {
+        Ok(Some(existing)) => {
+            tracing::info!(
+                "Spec sheet already exists for task {}, skipping generation",
+                task_id
+            );
+            existing
+        }
+        _ => {
+            // Generate spec sheet via Claude
+            let spec_prompt =
+                spec_generator::build_spec_generation_prompt(title, description, Some(plan_text));
+            let spec_working_path = working_dir.to_path_buf();
 
-    let spec_result = tokio::task::spawn_blocking(move || {
-        spec_generator::run_spec_generation(&spec_prompt, &spec_working_path)
-    })
-    .await;
+            let spec_result = tokio::task::spawn_blocking(move || {
+                spec_generator::run_spec_generation(&spec_prompt, &spec_working_path)
+            })
+            .await;
 
-    let spec = match spec_result {
-        Ok(Ok(raw_output)) => match spec_generator::parse_spec_output(&raw_output) {
-            Ok(spec) => spec,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to parse auto-generated spec for task {}: {}",
-                    task_id,
-                    e
-                );
-                return;
+            let spec = match spec_result {
+                Ok(Ok(raw_output)) => match spec_generator::parse_spec_output(&raw_output) {
+                    Ok(spec) => spec,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to parse auto-generated spec for task {}: {}",
+                            task_id,
+                            e
+                        );
+                        return;
+                    }
+                },
+                Ok(Err(e)) => {
+                    tracing::warn!("Auto spec generation failed for task {}: {}", task_id, e);
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Auto spec generation task panicked for task {}: {}",
+                        task_id,
+                        e
+                    );
+                    return;
+                }
+            };
+
+            // Store the spec sheet
+            let spec_data = CreateSpecSheet {
+                overview: Some(spec.overview),
+                requirements: Some(serde_json::to_string(&spec.requirements).unwrap_or_default()),
+                acceptance_criteria: Some(
+                    serde_json::to_string(&spec.acceptance_criteria).unwrap_or_default(),
+                ),
+                constraints: Some(serde_json::to_string(&spec.constraints).unwrap_or_default()),
+                tech_notes: Some(spec.tech_notes),
+            };
+
+            match SpecSheet::upsert(pool, task_id, &spec_data).await {
+                Ok(s) => {
+                    tracing::info!("Auto-generated spec sheet for task {}", task_id);
+                    s
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to store auto-generated spec for task {}: {}",
+                        task_id,
+                        e
+                    );
+                    return;
+                }
             }
-        },
-        Ok(Err(e)) => {
-            tracing::warn!("Auto spec generation failed for task {}: {}", task_id, e);
-            return;
         }
-        Err(e) => {
-            tracing::warn!(
-                "Auto spec generation task panicked for task {}: {}",
+    };
+
+    // Step 2: Check if child tasks already exist (idempotent on recovery)
+    let existing_children = Task::find_by_parent_task_id(pool, task_id).await;
+    if let Ok(ref children) = existing_children {
+        if !children.is_empty() {
+            tracing::info!(
+                "Task {} already has {} child tasks, skipping decomposition",
                 task_id,
-                e
+                children.len()
             );
             return;
         }
-    };
-
-    // Step 2: Store the spec sheet
-    let spec_data = CreateSpecSheet {
-        overview: Some(spec.overview),
-        requirements: Some(serde_json::to_string(&spec.requirements).unwrap_or_default()),
-        acceptance_criteria: Some(
-            serde_json::to_string(&spec.acceptance_criteria).unwrap_or_default(),
-        ),
-        constraints: Some(serde_json::to_string(&spec.constraints).unwrap_or_default()),
-        tech_notes: Some(spec.tech_notes),
-    };
-
-    let stored_spec = match SpecSheet::upsert(pool, task_id, &spec_data).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(
-                "Failed to store auto-generated spec for task {}: {}",
-                task_id,
-                e
-            );
-            return;
-        }
-    };
-
-    tracing::info!("Auto-generated spec sheet for task {}", task_id);
+    }
 
     // Step 3: Decompose into child tasks
     let decompose_prompt = decomposer::generate_decomposition_prompt(&stored_spec, title);
