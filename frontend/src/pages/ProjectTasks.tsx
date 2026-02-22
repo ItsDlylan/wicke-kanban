@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertTriangle, Plus } from 'lucide-react';
+import { PlanningEmptyState } from '@/components/tasks/PlanningEmptyState';
 import { Loader } from '@/components/ui/loader';
 import { tasksApi } from '@/lib/api';
 import type { RepoBranchStatus, Workspace } from 'shared/types';
@@ -347,6 +348,9 @@ export function ProjectTasks() {
   const rawMode = searchParams.get('view') as LayoutMode;
   const mode: LayoutMode =
     rawMode === 'preview' || rawMode === 'diffs' ? rawMode : null;
+
+  const board = searchParams.get('board');
+  const isPlanningBoard = board === 'planning';
 
   // TODO: Remove this redirect after v0.1.0 (legacy URL support for bookmarked links)
   // Migrates old `view=logs` to `view=diffs`
@@ -870,7 +874,9 @@ export function ProjectTasks() {
   );
 
   const kanbanContent =
-    tasks.length === 0 ? (
+    tasks.length === 0 && isPlanningBoard ? (
+      <PlanningEmptyState onCreateEpic={handleCreateNewTask} />
+    ) : tasks.length === 0 ? (
       <div className="max-w-7xl mx-auto mt-8">
         <Card>
           <CardContent className="text-center py-8">
