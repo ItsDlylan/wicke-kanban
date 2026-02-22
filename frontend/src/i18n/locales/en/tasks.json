@@ -20,6 +20,28 @@
     "createFirst": "Create First Task",
     "noSearchResults": "No tasks match your search."
   },
+  "planning": {
+    "empty": {
+      "title": "Plan larger features with iterative sessions",
+      "description": "The Planning Board helps you break down complex features into well-defined specs before handing them off to coding agents. Each epic moves through a structured workflow from initial idea to completion.",
+      "createFirst": "Create First Epic",
+      "workflow": {
+        "title": "How it works",
+        "idea": "Idea",
+        "ideaDescription": "Capture a feature concept",
+        "planning": "Planning",
+        "planningDescription": "Define requirements and scope",
+        "specreview": "Spec Review",
+        "specreviewDescription": "Review and refine the spec",
+        "ready": "Ready",
+        "readyDescription": "Approved and ready for agents",
+        "ralph": "Ralph",
+        "ralphDescription": "Agents execute the plan",
+        "done": "Done",
+        "doneDescription": "Feature complete"
+      }
+    }
+  },
   "actions": {
     "addTask": "Add task"
   },
