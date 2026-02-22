@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -908,9 +908,7 @@ export function ProjectTasks() {
           onCreateTask={handleCreateNewTask}
           projectId={projectId!}
           childrenStats={childrenStats}
-          columnSubtitles={
-            isPlanningBoard ? PLANNING_SUBTITLES : undefined
-          }
+          columnSubtitles={isPlanningBoard ? PLANNING_SUBTITLES : undefined}
         />
       </div>
     );
