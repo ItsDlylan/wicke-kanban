@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -72,8 +72,11 @@ import { AttemptHeaderActions } from '@/components/panels/AttemptHeaderActions';
 import { TaskPanelHeaderActions } from '@/components/panels/TaskPanelHeaderActions';
 
 import type { TaskWithAttemptStatus, TaskStatus } from 'shared/types';
+import { cn } from '@/lib/utils';
 
 type Task = TaskWithAttemptStatus;
+
+type BoardMode = 'tasks' | 'planning';
 
 const TASK_STATUSES = [
   'backlog',
@@ -85,6 +88,16 @@ const TASK_STATUSES = [
   'done',
   'cancelled',
 ] as const;
+
+const PLANNING_SUBTITLES: Partial<Record<TaskStatus, string>> = {
+  backlog: 'Capture feature concepts',
+  plangenerating: 'Active Claude Code sessions',
+  ready: 'Review generated specs',
+  ralph: 'Executing autonomously',
+  inprogress: 'Specced & decomposed',
+  qa: 'Review & QA',
+  done: 'Completed',
+};
 
 const normalizeStatus = (status: string): TaskStatus =>
   status.toLowerCase() as TaskStatus;
@@ -152,6 +165,7 @@ export function ProjectTasks() {
   const isXL = useMediaQuery('(min-width: 1280px)');
   const isMobile = !isXL;
   const posthog = usePostHog();
+  const [boardMode, setBoardMode] = useState<BoardMode>('tasks');
 
   const {
     projectId,
@@ -434,6 +448,8 @@ export function ProjectTasks() {
       ),
     [visibleTasksByStatus]
   );
+
+  const totalTaskCount = tasks.length;
 
   useKeyNavUp(
     () => {
@@ -746,6 +762,45 @@ export function ProjectTasks() {
       : `${truncated}...`;
   };
 
+  const boardToggle = (
+    <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+      <button
+        type="button"
+        onClick={() => setBoardMode('tasks')}
+        className={cn(
+          'px-3 py-1.5 text-sm rounded-md transition-colors',
+          boardMode === 'tasks'
+            ? 'bg-secondary text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+        )}
+      >
+        Tasks
+        {totalTaskCount > 0 && (
+          <span className="ml-1.5 text-xs text-muted-foreground">
+            ({totalTaskCount})
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => setBoardMode('planning')}
+        className={cn(
+          'px-3 py-1.5 text-sm rounded-md transition-colors',
+          boardMode === 'planning'
+            ? 'bg-secondary text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+        )}
+      >
+        Planning
+        {totalTaskCount > 0 && (
+          <span className="ml-1.5 text-xs text-muted-foreground">
+            ({totalTaskCount})
+          </span>
+        )}
+      </button>
+    </div>
+  );
+
   const kanbanContent =
     tasks.length === 0 ? (
       <div className="max-w-7xl mx-auto mt-8">
@@ -770,15 +825,21 @@ export function ProjectTasks() {
         </Card>
       </div>
     ) : (
-      <div className="w-full h-full overflow-x-auto overflow-y-auto overscroll-x-contain">
-        <TaskKanbanBoard
-          columns={kanbanColumns}
-          onDragEnd={handleDragEnd}
-          onViewTaskDetails={handleViewTaskDetails}
-          selectedTaskId={selectedTask?.id}
-          onCreateTask={handleCreateNewTask}
-          projectId={projectId!}
-        />
+      <div className="w-full h-full flex flex-col">
+        {boardToggle}
+        <div className="flex-1 overflow-x-auto overflow-y-auto overscroll-x-contain">
+          <TaskKanbanBoard
+            columns={kanbanColumns}
+            onDragEnd={handleDragEnd}
+            onViewTaskDetails={handleViewTaskDetails}
+            selectedTaskId={selectedTask?.id}
+            onCreateTask={handleCreateNewTask}
+            projectId={projectId!}
+            columnSubtitles={
+              boardMode === 'planning' ? PLANNING_SUBTITLES : undefined
+            }
+          />
+        </div>
       </div>
     );
 

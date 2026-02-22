@@ -153,6 +153,7 @@ export type KanbanHeaderProps =
       color: Status['color'];
       className?: string;
       onAddTask?: () => void;
+      subtitle?: string;
     };
 
 export const KanbanHeader = (props: KanbanHeaderProps) => {
@@ -173,13 +174,20 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
         backgroundImage: `linear-gradient(hsl(var(${props.color}) / 0.03), hsl(var(${props.color}) / 0.03))`,
       }}
     >
-      <span className="flex-1 flex items-center gap-2">
-        <div
-          className="h-2 w-2 rounded-full"
-          style={{ backgroundColor: `hsl(var(${props.color}))` }}
-        />
+      <span className="flex-1 flex flex-col gap-0.5">
+        <span className="flex items-center gap-2">
+          <div
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: `hsl(var(${props.color}))` }}
+          />
 
-        <p className="m-0 text-sm">{props.name}</p>
+          <p className="m-0 text-sm">{props.name}</p>
+        </span>
+        {props.subtitle && (
+          <p className="m-0 text-xs text-muted-foreground pl-4">
+            {props.subtitle}
+          </p>
+        )}
       </span>
       <TooltipProvider>
         <Tooltip>
