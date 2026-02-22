@@ -392,6 +392,14 @@ export const tasksApi = {
     });
     return handleApiResponse<Task>(response);
   },
+
+  updatePlan: async (taskId: string, plan: string): Promise<Task> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/plan`, {
+      method: 'PUT',
+      body: JSON.stringify({ plan }),
+    });
+    return handleApiResponse<Task>(response);
+  },
 };
 
 export const specSheetsApi = {

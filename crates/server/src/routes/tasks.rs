@@ -426,6 +426,25 @@ pub async fn delete_task(
     Ok((StatusCode::ACCEPTED, ResponseJson(ApiResponse::success(()))))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdatePlanBody {
+    pub plan: String,
+}
+
+pub async fn update_task_plan(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<UpdatePlanBody>,
+) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
+    Task::update_plan(&deployment.db().pool, task.id, &payload.plan, "completed").await?;
+
+    let updated_task = Task::find_by_id(&deployment.db().pool, task.id)
+        .await?
+        .ok_or(ApiError::Database(SqlxError::RowNotFound))?;
+
+    Ok(ResponseJson(ApiResponse::success(updated_task)))
+}
+
 pub async fn regenerate_plan(
     Extension(task): Extension<Task>,
     State(deployment): State<DeploymentImpl>,
@@ -446,7 +465,8 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_actions_router = Router::new()
         .route("/", put(update_task))
         .route("/", delete(delete_task))
-        .route("/regenerate-plan", post(regenerate_plan));
+        .route("/regenerate-plan", post(regenerate_plan))
+        .route("/plan", put(update_task_plan));
 
     let task_id_router = Router::new()
         .route("/", get(get_task))
