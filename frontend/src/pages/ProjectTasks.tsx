@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -72,8 +72,11 @@ import { AttemptHeaderActions } from '@/components/panels/AttemptHeaderActions';
 import { TaskPanelHeaderActions } from '@/components/panels/TaskPanelHeaderActions';
 
 import type { TaskWithAttemptStatus, TaskStatus } from 'shared/types';
+import { cn } from '@/lib/utils';
 
 type Task = TaskWithAttemptStatus;
+
+type BoardMode = 'tasks' | 'planning';
 
 const TASK_STATUSES = [
   'backlog',
@@ -94,6 +97,15 @@ const PLANNING_STATUSES = [
   'ralph',
   'done',
 ] as const;
+
+const PLANNING_SUBTITLES: Partial<Record<TaskStatus, string>> = {
+  idea: 'Capture feature concepts',
+  planning: 'Active Claude Code sessions',
+  specreview: 'Review generated specs',
+  ready: 'Specced & decomposed',
+  ralph: 'Executing autonomously',
+  done: 'Completed',
+};
 
 const normalizeStatus = (status: string): TaskStatus =>
   status.toLowerCase() as TaskStatus;
@@ -161,7 +173,6 @@ export function ProjectTasks() {
   const isXL = useMediaQuery('(min-width: 1280px)');
   const isMobile = !isXL;
   const posthog = usePostHog();
-
   const {
     projectId,
     project,
@@ -484,6 +495,9 @@ export function ProjectTasks() {
       ),
     [visibleTasksByStatus]
   );
+
+  const taskCount = tasks.filter((t) => t.task_type !== 'epic').length;
+  const epicCount = tasks.filter((t) => t.task_type === 'epic').length;
 
   useKeyNavUp(
     () => {
@@ -817,26 +831,40 @@ export function ProjectTasks() {
   };
 
   const boardToggle = (
-    <div className="flex gap-1 px-4 pt-3 pb-1">
+    <div className="flex items-center gap-1 px-4 pt-3 pb-1">
       <button
+        type="button"
         onClick={() => setBoard('tasks')}
-        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+        className={cn(
+          'px-3 py-1.5 text-sm rounded-md transition-colors',
           !isPlanningBoard
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-        }`}
+            ? 'bg-secondary text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+        )}
       >
         Tasks
+        {taskCount > 0 && (
+          <span className="ml-1.5 text-xs text-muted-foreground">
+            ({taskCount})
+          </span>
+        )}
       </button>
       <button
+        type="button"
         onClick={() => setBoard('planning')}
-        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+        className={cn(
+          'px-3 py-1.5 text-sm rounded-md transition-colors',
           isPlanningBoard
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-        }`}
+            ? 'bg-secondary text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+        )}
       >
         Planning
+        {epicCount > 0 && (
+          <span className="ml-1.5 text-xs text-muted-foreground">
+            ({epicCount})
+          </span>
+        )}
       </button>
     </div>
   );
@@ -874,6 +902,9 @@ export function ProjectTasks() {
           onCreateTask={handleCreateNewTask}
           projectId={projectId!}
           childrenStats={childrenStats}
+          columnSubtitles={
+            isPlanningBoard ? PLANNING_SUBTITLES : undefined
+          }
         />
       </div>
     );

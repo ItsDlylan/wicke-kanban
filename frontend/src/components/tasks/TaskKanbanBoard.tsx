@@ -20,6 +20,7 @@ interface TaskKanbanBoardProps {
   onCreateTask?: () => void;
   projectId: string;
   childrenStats?: Record<string, { done: number; total: number }>;
+  columnSubtitles?: Partial<Record<TaskStatus, string>>;
 }
 
 function TaskKanbanBoard({
@@ -30,6 +31,7 @@ function TaskKanbanBoard({
   onCreateTask,
   projectId,
   childrenStats,
+  columnSubtitles,
 }: TaskKanbanBoardProps) {
   return (
     <KanbanProvider onDragEnd={onDragEnd}>
@@ -41,6 +43,7 @@ function TaskKanbanBoard({
               name={statusLabels[statusKey]}
               color={statusBoardColors[statusKey]}
               onAddTask={onCreateTask}
+              subtitle={columnSubtitles?.[statusKey]}
             />
             <KanbanCards>
               {tasks.map((task, index) => (
