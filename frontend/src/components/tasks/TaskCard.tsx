@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
-import { CheckCircle2, Link, Loader2, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  FileText,
+  GitBranch,
+  Link,
+  Loader2,
+  XCircle,
+} from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
 import { Button } from '@/components/ui/button';
@@ -76,6 +83,9 @@ export function TaskCard({
     });
   }, [isOpen]);
 
+  const isEpic = task.task_type === 'epic';
+  const isRalphReady = task.has_spec && task.has_children;
+
   const card = (
     <KanbanCard
       key={task.id}
@@ -87,6 +97,11 @@ export function TaskCard({
       isOpen={isOpen}
       forwardedRef={localRef}
       stacked={task.has_children}
+      className={
+        isEpic
+          ? 'border-l-2 border-l-purple-500 bg-purple-50/50 dark:bg-purple-950/20'
+          : undefined
+      }
     >
       <div className="flex flex-col gap-2">
         <TaskCardHeader
@@ -108,7 +123,7 @@ export function TaskCard({
                   <XCircle className="h-3.5 w-3.5 text-red-500" />
                 </span>
               )}
-              {task.task_type === 'epic' && (
+              {isEpic && (
                 <span
                   title="Epic"
                   className="text-[10px] font-bold text-purple-600 bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400 px-1 rounded"
@@ -116,7 +131,7 @@ export function TaskCard({
                   E
                 </span>
               )}
-              {task.has_spec && task.has_children && (
+              {isRalphReady && (
                 <span
                   title="Ralph Ready"
                   className="text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-1 rounded"
@@ -154,6 +169,26 @@ export function TaskCard({
             </>
           }
         />
+        {isEpic && (
+          <div className="flex items-center gap-2">
+            {task.has_spec && (
+              <span
+                title="Spec sheet"
+                className="inline-flex items-center gap-0.5 text-[10px] text-purple-600 dark:text-purple-400"
+              >
+                <FileText className="h-3 w-3" />
+                <span>Spec</span>
+              </span>
+            )}
+            <span
+              title="Epic — has subtasks"
+              className="inline-flex items-center gap-0.5 text-[10px] text-purple-600 dark:text-purple-400"
+            >
+              <GitBranch className="h-3 w-3" />
+              <span>Epic</span>
+            </span>
+          </div>
+        )}
         {task.description && (
           <p className="text-sm text-secondary-foreground break-words">
             {task.description.length > 130
