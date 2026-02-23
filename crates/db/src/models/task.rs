@@ -581,6 +581,25 @@ ORDER BY t.created_at DESC"#,
         Ok(tasks)
     }
 
+    /// Find tasks stuck in PlanGenerating status but with plan_status = 'completed'.
+    /// These are tasks where plan generation finished but the server restarted before
+    /// auto_prepare_for_ralph and the Ready transition could complete.
+    pub async fn find_stuck_plan_completed(pool: &SqlitePool) -> Result<Vec<Task>, sqlx::Error> {
+        sqlx::query_as!(
+            Task,
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description,
+                      status as "status!: TaskStatus", task_type as "task_type!: TaskType",
+                      parent_workspace_id as "parent_workspace_id: Uuid",
+                      parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32",
+                      plan, plan_status, created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM tasks
+               WHERE status = 'plangenerating' AND plan_status = 'completed'"#
+        )
+        .fetch_all(pool)
+        .await
+    }
+
     /// Count children tasks and how many are done.
     pub async fn count_children(
         pool: &SqlitePool,

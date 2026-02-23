@@ -137,6 +137,7 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     PlanViewDialog.show({
       taskId: task.id,
       taskTitle: task.title,
+      taskDescription: task.description ?? undefined,
       plan: task.plan ?? null,
       planStatus: task.plan_status ?? null,
     });
