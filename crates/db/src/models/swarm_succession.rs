@@ -174,4 +174,42 @@ impl SwarmSuccession {
         .await?;
         Ok(())
     }
+
+    pub async fn update_verification(
+        pool: &SqlitePool,
+        id: Uuid,
+        verification_report: &str,
+        verifier_confidence: f64,
+        recovery_strategy: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"UPDATE swarm_successions
+               SET verification_report = $2, verifier_confidence = $3,
+                   recovery_strategy = $4, status = 'verified',
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1"#,
+            id,
+            verification_report,
+            verifier_confidence,
+            recovery_strategy,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_successor_id(
+        pool: &SqlitePool,
+        id: Uuid,
+        successor_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE swarm_successions SET successor_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            successor_id,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
 }

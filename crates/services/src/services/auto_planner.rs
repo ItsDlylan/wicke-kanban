@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{decomposer, spec_generator};
+use super::{decomposer, spec_assessor, spec_generator};
 
 #[derive(Debug, Error)]
 pub enum AutoPlannerError {
@@ -407,6 +407,61 @@ async fn auto_prepare_for_ralph(
             }
         }
     };
+
+    // Step 1.5: Run routing assessment (skip for trivial tasks)
+    let should_assess = stored_spec
+        .overview
+        .as_deref()
+        .map_or(false, |o| o.len() > 50);
+    if should_assess {
+        let assess_prompt = spec_assessor::build_assessment_prompt(&stored_spec, title);
+        let assess_working_path = working_dir.to_path_buf();
+
+        let assess_result = tokio::task::spawn_blocking(move || {
+            spec_assessor::run_assessment(&assess_prompt, &assess_working_path)
+        })
+        .await;
+
+        match assess_result {
+            Ok(Ok(raw_output)) => {
+                if let Ok(assessment) = spec_assessor::parse_assessment_output(&raw_output) {
+                    let routing = spec_assessor::route_from_score(&assessment);
+                    if let Err(e) = SpecSheet::update_complexity_score(
+                        pool,
+                        stored_spec.id,
+                        assessment.complexity_score as i64,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            "Failed to store complexity score for task {}: {}",
+                            task_id,
+                            e
+                        );
+                    }
+                    if let Err(e) = Task::update_routing_decision(pool, task_id, &routing).await {
+                        tracing::warn!(
+                            "Failed to store routing decision for task {}: {}",
+                            task_id,
+                            e
+                        );
+                    }
+                    tracing::info!(
+                        "Spec assessment for task {}: score={}, routing={}",
+                        task_id,
+                        assessment.complexity_score,
+                        routing
+                    );
+                }
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("Spec assessment failed for task {}: {}", task_id, e)
+            }
+            Err(e) => {
+                tracing::warn!("Spec assessment panicked for task {}: {}", task_id, e)
+            }
+        }
+    }
 
     // Step 2: Check if child tasks already exist (idempotent on recovery)
     let existing_children = Task::find_by_parent_task_id(pool, task_id).await;

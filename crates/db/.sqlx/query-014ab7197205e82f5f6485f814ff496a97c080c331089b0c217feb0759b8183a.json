@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE swarm_successions\n               SET verification_report = $2, verifier_confidence = $3,\n                   recovery_strategy = $4, status = 'verified',\n                   updated_at = CURRENT_TIMESTAMP\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "014ab7197205e82f5f6485f814ff496a97c080c331089b0c217feb0759b8183a"
+}

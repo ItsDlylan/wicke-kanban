@@ -653,6 +653,28 @@ export type PatchType = { "type": "NORMALIZED_ENTRY", "content": NormalizedEntry
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]?: JsonValue } | null;
 
+export type Swarm = { id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmStatus = "pending" | "running" | "completed" | "failed";
+
+export type RoutingDecision = "single" | "single_verifier" | "vs_shallow" | "vs_deep";
+
+export type SwarmAgent = { id: string, swarm_id: string, execution_process_id: string | null, subtask_description: string, generation: bigint, predecessor_id: string | null, status: SwarmAgentStatus, context_tokens_used: bigint | null, context_window_size: bigint | null, context_threshold: number, sort_order: bigint, created_at: string, updated_at: string, };
+
+export type SwarmAgentStatus = "pending" | "running" | "completed" | "failed" | "threshold";
+
+export type SwarmSuccession = { id: string, swarm_id: string, predecessor_id: string, verifier_execution_id: string | null, successor_id: string | null, predecessor_self_assessment: string | null, verification_report: string | null, verifier_confidence: number | null, recovery_strategy: string | null, status: SwarmSuccessionStatus, created_at: string, updated_at: string, };
+
+export type SwarmSuccessionStatus = "pending" | "verifying" | "verified" | "successor_running" | "failed";
+
+export type RecoveryStrategy = "corrective" | "clean_restart" | "redecomposition" | "escalation";
+
+export type SpecAssessment = { complexity_score: number, files_estimated: number, subsystems: Array<string>, context_estimate: number, decomposability: string, recommended: string, confidence: number, };
+
+export type SwarmWithAgents = { agents: Array<SwarmAgent>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmOverview = { agents: Array<SwarmAgent>, successions: Array<SwarmSuccession>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
 export const DEFAULT_PR_DESCRIPTION_PROMPT = "Update the PR that was just created with a better title and description.\nThe PR number is #{pr_number} and the URL is {pr_url}.\n\nAnalyze the changes in this branch and write:\n1. A concise, descriptive title that summarizes the changes, postfixed with \"(Wickeban)\"\n2. A detailed description that explains:\n   - What changes were made\n   - Why they were made (based on the task context)\n   - Any important implementation details\n\nUse the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps).";
 
 export const DEFAULT_COMMIT_REMINDER_PROMPT = "There are uncommitted changes. Please stage and commit them now with a descriptive commit message.";

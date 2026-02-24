@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sa.id as \"id!: Uuid\", sa.swarm_id as \"swarm_id!: Uuid\",\n                      sa.execution_process_id as \"execution_process_id: Uuid\",\n                      sa.subtask_description, sa.generation as \"generation!: i64\",\n                      sa.predecessor_id as \"predecessor_id: Uuid\",\n                      sa.status as \"status!: SwarmAgentStatus\",\n                      sa.context_tokens_used as \"context_tokens_used: i64\",\n                      sa.context_window_size as \"context_window_size: i64\",\n                      sa.context_threshold as \"context_threshold!: f64\",\n                      sa.sort_order as \"sort_order!: i64\",\n                      sa.created_at as \"created_at!: DateTime<Utc>\",\n                      sa.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarm_agents sa\n               WHERE sa.swarm_id = $1 AND sa.status = 'pending'\n               AND NOT EXISTS (\n                   SELECT 1 FROM swarm_agent_dependencies sad\n                   JOIN swarm_agents dep ON dep.id = sad.depends_on_agent_id\n                   WHERE sad.agent_id = sa.id AND dep.status != 'completed'\n               )\n               ORDER BY sa.sort_order ASC, sa.created_at ASC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "swarm_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "execution_process_id: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "subtask_description",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "generation!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "predecessor_id: Uuid",
+        "ordinal": 5,
+        "type_info": "Blob"
+      },
+      {
+        "name": "status!: SwarmAgentStatus",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "context_tokens_used: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "context_window_size: i64",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "context_threshold!: f64",
+        "ordinal": 9,
+        "type_info": "Float"
+      },
+      {
+        "name": "sort_order!: i64",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "93a7ce75f8e542f527da8496b66a4809760239f9c212a33838eee24bf5e8740d"
+}

@@ -545,6 +545,21 @@ ORDER BY t.created_at DESC"#,
         Ok(())
     }
 
+    pub async fn update_routing_decision(
+        pool: &SqlitePool,
+        id: Uuid,
+        decision: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE tasks SET routing_decision = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            decision
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Update only the plan_status for a task.
     pub async fn update_plan_status(
         pool: &SqlitePool,

@@ -227,4 +227,29 @@ impl SwarmAgent {
         .await?;
         Ok(())
     }
+
+    pub async fn update_execution_process_id(
+        pool: &SqlitePool,
+        id: Uuid,
+        execution_process_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE swarm_agents SET execution_process_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            execution_process_id,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn count_by_swarm_id(pool: &SqlitePool, swarm_id: Uuid) -> Result<i64, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT COUNT(*) as "count!: i64" FROM swarm_agents WHERE swarm_id = $1"#,
+            swarm_id,
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(result.count)
+    }
 }

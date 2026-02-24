@@ -357,6 +357,38 @@ pub trait ContainerService {
     async fn finalize_task(&self, ctx: &ExecutionContext) {
         let pool = &self.db().pool;
 
+        // Check if this execution belongs to a VS swarm agent
+        if let Ok(Some(_swarm_agent)) =
+            db::models::swarm_agent::SwarmAgent::find_by_execution_process_id(
+                pool,
+                ctx.execution_process.id,
+            )
+            .await
+        {
+            let executor_profile_id =
+                match ExecutionProcess::latest_executor_profile_for_session(pool, ctx.session.id)
+                    .await
+                {
+                    Ok(Some(profile)) => profile,
+                    _ => executors::profile::ExecutorProfileId::new(
+                        executors::executors::BaseCodingAgent::ClaudeCode,
+                    ),
+                };
+
+            if let Err(e) = super::swarm_coordinator::on_agent_completed(
+                pool,
+                self,
+                ctx.execution_process.id,
+                &executor_profile_id,
+            )
+            .await
+            {
+                tracing::error!("Failed to handle swarm agent completion: {e}");
+                // Fall through — don't block finalization
+            }
+            return;
+        }
+
         // Check if this is a Ralph loop child task
         if let Some(parent_workspace_id) = ctx.task.parent_workspace_id {
             if let Ok(Some(parent_workspace)) =
