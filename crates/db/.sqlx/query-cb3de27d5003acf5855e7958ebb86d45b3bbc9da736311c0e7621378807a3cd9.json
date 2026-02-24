@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               ORDER BY created_at ASC",
+  "query": "SELECT t.id as \"id!: Uuid\", t.project_id as \"project_id!: Uuid\", t.title, t.description, t.status as \"status!: TaskStatus\", t.task_type as \"task_type!: TaskType\", t.parent_workspace_id as \"parent_workspace_id: Uuid\", t.parent_task_id as \"parent_task_id: Uuid\", t.sort_order as \"sort_order!: i32\", t.plan, t.plan_status, t.is_human as \"is_human!: bool\", t.created_at as \"created_at!: DateTime<Utc>\", t.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks t\n               WHERE t.parent_workspace_id = $1\n                 AND t.status = 'ready'\n                 AND NOT EXISTS (\n                     SELECT 1 FROM task_dependencies td\n                     JOIN tasks dep ON dep.id = td.depends_on\n                     WHERE td.task_id = t.id AND dep.status != 'done'\n                 )\n               ORDER BY t.sort_order ASC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -59,18 +59,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "is_human!: bool",
         "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 12,
         "type_info": "Text"
       },
       {
         "name": "updated_at!: DateTime<Utc>",
-        "ordinal": 12,
+        "ordinal": 13,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
@@ -85,8 +90,9 @@
       true,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "c674b8d90e81875553142143fc2f29794aecf610b1f24deb69c1f34e75c762be"
+  "hash": "cb3de27d5003acf5855e7958ebb86d45b3bbc9da736311c0e7621378807a3cd9"
 }

@@ -83,6 +83,7 @@ type TaskFormValues = {
   executorProfileId: ExecutorProfileId | null;
   repoBranches: RepoBranch[];
   autoStart: boolean;
+  isHuman: boolean;
 };
 
 const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
@@ -138,6 +139,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
+          isHuman: false,
         };
 
       case 'duplicate':
@@ -148,6 +150,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
+          isHuman: false,
         };
 
       case 'subtask':
@@ -160,6 +163,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
+          isHuman: false,
         };
     }
   }, [mode, props, system.config?.executor_profile, defaultRepoBranches]);
@@ -197,6 +201,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         sort_order: null,
         shared_task_id: null,
         plan_status: null,
+        is_human: (isEpic && value.isHuman) || null,
       };
       const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
       if (shouldAutoStart) {
@@ -634,8 +639,8 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
 
           {/* Actions */}
           <div className="flex items-center justify-between gap-3">
-            {/* Attach Image*/}
-            <div className="flex items-center gap-2">
+            {/* Attach Image + Human toggle */}
+            <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="sm"
@@ -645,6 +650,29 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
               >
                 <ImageIcon className="h-4 w-4" />
               </Button>
+              {!editMode && mode === 'create' && props.taskType === 'epic' && (
+                <form.Field name="isHuman">
+                  {(field) => (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="human-task-switch"
+                        checked={field.state.value}
+                        onCheckedChange={(checked) =>
+                          field.handleChange(checked)
+                        }
+                        disabled={isSubmitting}
+                        className="data-[state=checked]:bg-teal-600 dark:data-[state=checked]:bg-teal-500"
+                      />
+                      <Label
+                        htmlFor="human-task-switch"
+                        className="text-sm cursor-pointer"
+                      >
+                        Human task
+                      </Label>
+                    </div>
+                  )}
+                </form.Field>
+              )}
             </div>
 
             {/* Autostart switch */}

@@ -243,38 +243,47 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
           {hasTaskActions && (
             <>
               <DropdownMenuLabel>{t('actionsMenu.task')}</DropdownMenuLabel>
-              <DropdownMenuItem disabled={!projectId} onClick={handleSpecSheet}>
-                Spec Sheet
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!task?.plan_status}
-                onClick={handleViewPlan}
-              >
-                View Plan
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!task || task.status !== 'ready'}
-                onClick={handleStart}
-              >
-                <Play className="mr-2 h-4 w-4" />
-                Start
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={
-                  !task ||
-                  task.status !== 'ready' ||
-                  (task.has_spec && task.has_children)
-                }
-                onClick={handleMakeRalphReady}
-              >
-                Make Ralph Ready
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!task || !['ready', 'ralph'].includes(task.status)}
-                onClick={handleRalphSession}
-              >
-                Ralph Session
-              </DropdownMenuItem>
+              {!task?.is_human && (
+                <>
+                  <DropdownMenuItem
+                    disabled={!projectId}
+                    onClick={handleSpecSheet}
+                  >
+                    Spec Sheet
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!task?.plan_status}
+                    onClick={handleViewPlan}
+                  >
+                    View Plan
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!task || task.status !== 'ready'}
+                    onClick={handleStart}
+                  >
+                    <Play className="mr-2 h-4 w-4" />
+                    Start
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      !task ||
+                      task.status !== 'ready' ||
+                      (task.has_spec && task.has_children)
+                    }
+                    onClick={handleMakeRalphReady}
+                  >
+                    Make Ralph Ready
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      !task || !['ready', 'ralph'].includes(task.status)
+                    }
+                    onClick={handleRalphSession}
+                  >
+                    Ralph Session
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem disabled={!projectId} onClick={handleEdit}>
                 {t('common:buttons.edit')}
               </DropdownMenuItem>
