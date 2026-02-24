@@ -84,6 +84,7 @@ export function TaskCard({
   }, [isOpen]);
 
   const isEpic = task.task_type === 'epic';
+  const isHumanEpic = isEpic && task.is_human;
   const isRalphReady = task.has_spec && task.has_children;
 
   const card = (
@@ -98,9 +99,11 @@ export function TaskCard({
       forwardedRef={localRef}
       stacked={task.has_children}
       className={
-        isEpic
-          ? 'border-l-2 border-l-purple-500 bg-purple-50/50 dark:bg-purple-950/20'
-          : undefined
+        isHumanEpic
+          ? 'border-l-2 border-l-teal-500 bg-teal-50/50 dark:bg-teal-950/20'
+          : isEpic
+            ? 'border-l-2 border-l-purple-500 bg-purple-50/50 dark:bg-purple-950/20'
+            : undefined
       }
     >
       <div className="flex flex-col gap-2">
@@ -108,22 +111,30 @@ export function TaskCard({
           title={task.title}
           right={
             <>
-              {task.plan_status === 'generating' && (
+              {!isHumanEpic && task.plan_status === 'generating' && (
                 <span title="Generating plan...">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-500" />
                 </span>
               )}
-              {task.plan_status === 'completed' && (
+              {!isHumanEpic && task.plan_status === 'completed' && (
                 <span title="Plan ready">
                   <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                 </span>
               )}
-              {task.plan_status === 'failed' && (
+              {!isHumanEpic && task.plan_status === 'failed' && (
                 <span title="Plan failed">
                   <XCircle className="h-3.5 w-3.5 text-red-500" />
                 </span>
               )}
-              {isEpic && (
+              {isHumanEpic && (
+                <span
+                  title="Human Task"
+                  className="text-[10px] font-bold text-teal-600 bg-teal-100 dark:bg-teal-900/30 dark:text-teal-400 px-1 rounded"
+                >
+                  H
+                </span>
+              )}
+              {isEpic && !isHumanEpic && (
                 <span
                   title="Epic"
                   className="text-[10px] font-bold text-purple-600 bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400 px-1 rounded"
@@ -131,7 +142,7 @@ export function TaskCard({
                   E
                 </span>
               )}
-              {isRalphReady && (
+              {!isHumanEpic && isRalphReady && (
                 <span
                   title="Ralph Ready"
                   className="text-[10px] font-bold text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-1 rounded"
@@ -169,7 +180,7 @@ export function TaskCard({
             </>
           }
         />
-        {isEpic && (
+        {isEpic && !isHumanEpic && (
           <div className="flex items-center gap-2">
             {task.has_spec && (
               <span

@@ -701,6 +701,7 @@ pub async fn create_workspace_from_pr(
         image_ids: None,
         sort_order: None,
         plan_status: None,
+        is_human: None,
     };
     let task = Task::create(pool, &create_task, task_id).await?;
 

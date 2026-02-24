@@ -221,6 +221,7 @@ pub async fn create_child_tasks(
             image_ids: None,
             sort_order: Some(story.sort_order),
             plan_status: None,
+            is_human: None,
         };
         let task = Task::create(pool, &create_task, task_id).await?;
         tasks.push(task);
