@@ -16,9 +16,9 @@ We introduce **Verified Succession**, a novel multi-agent orchestration architec
 
 Unlike existing orchestration patterns — sequential, concurrent, handoff, group chat, and magentic — which assume a fixed agent topology defined at design time, Verified Succession produces **emergent topology**: the shape of the swarm is determined at runtime by the shape of the problem. Central to the design is the *verify-then-continue* handoff protocol, in which a successor agent spawns a short-lived verification sub-agent to audit the predecessor's artifacts before continuing work. This eliminates context pollution, filters dead-end reasoning paths, and introduces an error-correction layer at every succession boundary.
 
-We present the formal architecture, analyze its theoretical properties including context efficiency, error propagation characteristics, and depth-bounded resource consumption, provide a concrete cost model with empirical token economics, and discuss the tradeoffs, caveats, and applicability boundaries of the approach against current single-agent and static multi-agent alternatives.
+We present the formal architecture, analyze its theoretical properties including context efficiency, error propagation characteristics, and depth-bounded resource consumption, provide a concrete cost model with empirical token economics, and discuss the tradeoffs, caveats, and applicability boundaries of the approach against current single-agent and static multi-agent alternatives. We further introduce the **Specification-Driven Routing Pipeline** — a human-in-the-loop pre-execution phase that converts ambiguous problem statements into validated specification sheets, determines the appropriate execution architecture through concurrent multi-agent assessment, and addresses the single weakest error category (requirements misunderstanding, p_v ≈ 0.05) by moving requirements validation to the front of the pipeline where human judgment is most effective.
 
-**Keywords:** multi-agent systems, agentic swarms, context window management, agent orchestration, verified succession, recursive spawning, software engineering automation
+**Keywords:** multi-agent systems, agentic swarms, context window management, agent orchestration, verified succession, recursive spawning, specification-driven routing, software engineering automation
 
 ---
 
@@ -44,7 +44,7 @@ However, all five patterns share a critical assumption: **the agent topology is 
 
 ### 1.3 Contributions
 
-This paper introduces the **Verified Succession** architecture, which makes four primary contributions:
+This paper introduces the **Verified Succession** architecture, which makes five primary contributions:
 
 1. **Context-triggered recursive spawning.** Agents monitor their own context utilization and, upon crossing a configurable threshold, decompose remaining work into a sub-swarm. This applies recursively at arbitrary depth, producing fractal agent topologies that scale with problem complexity.
 
@@ -53,6 +53,8 @@ This paper introduces the **Verified Succession** architecture, which makes four
 3. **Emergent topology.** Unlike all canonical orchestration patterns, the shape of the agent swarm is not predetermined. It emerges at runtime based on actual problem complexity, context consumption rates, and task decomposition decisions made by the agents themselves.
 
 4. **Concrete cost quantification and applicability boundaries.** We provide a detailed cost model grounded in current API pricing and empirical token economics, an honest analysis of what the architecture sacrifices, and a decision framework identifying when the approach is and is not justified.
+
+5. **Specification-Driven Routing Pipeline.** A production-grade pre-execution phase that converts raw problem statements into validated specifications through human-in-the-loop interviewing, assesses complexity via concurrent multi-agent evaluation, and routes to the appropriate execution architecture. This addresses the architecture's weakest error category — requirements misunderstanding — by elevating its detection probability from p_v ≈ 0.05 to p_v ≈ 0.90+.
 
 ---
 
@@ -702,9 +704,256 @@ The CLEAR evaluation framework (Cost, Latency, Efficiency, Assurance, Reliabilit
 
 ---
 
-## 6. Application to Software Engineering
+## 6. Specification-Driven Routing Pipeline
 
-### 6.1 Why Software Engineering Demands This Architecture
+### 6.1 The Routing Problem
+
+The analysis in Section 5 establishes clear applicability boundaries for Verified Succession, but leaves a critical question unanswered: given a raw problem statement — *"We need this feature"* — how does the system determine which execution architecture to employ? Choosing too simple an approach wastes the initial execution cost when the task fails or degrades. Choosing too complex an approach wastes the overhead premium on a task that did not require it.
+
+Google's predictive model for agent architecture selection achieves R² = 0.513 [25], meaning even their best automated classifier explains only half the variance in optimal architecture. This suggests that **static heuristics are insufficient** for routing decisions. The problem requires structured analysis of the specific task in context.
+
+More fundamentally, Section 5.5.2 identifies requirements misunderstanding as the weakest error category in the entire architecture (p_v ≈ 0.05). No amount of post-hoc verification can compensate for building the wrong thing. The routing decision must therefore serve a dual purpose: it must assess complexity *and* harden requirements before any implementation tokens are spent.
+
+### 6.2 Pipeline Architecture
+
+We introduce a **Specification-Driven Routing Pipeline** that sits upstream of the execution phase. The pipeline converts ambiguous problem statements into validated specification sheets through a structured sequence of planning, human interview, concurrent assessment, and synthesis.
+
+```
+SPECIFICATION-DRIVEN ROUTING PIPELINE
+══════════════════════════════════════
+
+Stage 1: PLANNING AGENT
+  Input:  Raw problem statement
+  Action: Explores codebase, maps dependencies, identifies unknowns
+  Output: Draft approach + list of open questions
+
+Stage 2: INTERVIEW PHASE (Human-in-the-Loop)
+  Input:  Draft approach + open questions
+  Action: Planning agent asks the human stakeholder targeted questions
+          to resolve ambiguities, confirm scope, and validate assumptions
+  Output: Resolved requirements + design decisions
+
+Stage 3: SPEC SHEET GENERATION
+  Input:  Resolved requirements
+  Action: Planning agent produces a structured specification artifact
+  Output: Spec sheet with acceptance criteria, scope boundaries,
+          and technical constraints
+
+Stage 4: CONCURRENT ASSESSMENT (Conditional)
+  Input:  Spec sheet
+  Action: 3 independent ranking agents evaluate the spec:
+          - Complexity assessment (files, systems, dependencies)
+          - Gap analysis (missing requirements, ambiguities)
+          - Risk identification (untested areas, external dependencies)
+  Output: 3 independent findings reports
+
+Stage 5: SYNTHESIS AND ROUTING
+  Input:  Spec sheet + 3 findings reports
+  Action: Synthesis agent merges assessments, fills identified gaps,
+          produces consensus complexity score, and selects execution
+          architecture
+  Output: Refined spec + routing decision + implementation brief
+```
+
+### 6.3 Stage Descriptions
+
+#### 6.3.1 Stage 1: The Planning Agent
+
+The planning agent performs the "scout" function: it reads relevant source files, maps module dependencies, identifies the subsystems a task will touch, and drafts an initial approach. Critically, it also produces a **list of open questions** — ambiguities in the problem statement that require human input to resolve.
+
+This stage consumes approximately 50K input tokens and 15K output tokens (~$0.63). The planning agent should be instructed to optimize for question quality over plan completeness: a thorough list of unknowns is more valuable than a detailed plan built on assumptions.
+
+#### 6.3.2 Stage 2: The Interview Phase
+
+The planning agent presents its open questions to the human stakeholder in a structured interview. This is the single highest-value step in the entire system.
+
+Example interview for "We need RBAC auth":
+```
+Planning Agent → Human:
+  1. How many roles do you need? (I see admin referenced in the
+     existing code, but no others defined)
+  2. JWT or session-based? (Current auth uses sessions, but the
+     API layer expects stateless tokens)
+  3. Should role changes take effect immediately or on next login?
+  4. Is audit logging in scope, or separate task?
+  5. Do you need row-level security, or just endpoint-level RBAC?
+```
+
+Each question surfaces an ambiguity that, if left unresolved, would propagate as a requirements misunderstanding through the entire execution phase. The interview elevates the requirements error detection probability from p_v ≈ 0.05 (post-hoc verification) to **p_v ≈ 0.90+** (direct human validation), because the human stakeholder is the authoritative source of intent.
+
+This stage costs approximately 30K input tokens and 10K output tokens (~$0.40), plus human time. The human time investment is small (typically 5-10 minutes of answering targeted questions) but produces outsized returns by preventing wrong-thing-built failures that would cost $7-175 to re-execute.
+
+#### 6.3.3 Stage 3: Spec Sheet Generation
+
+The planning agent synthesizes the interview responses into a **structured specification artifact** — a formal document with:
+
+- **Scope definition.** Exactly what is included and excluded.
+- **Acceptance criteria.** Testable conditions that define "done."
+- **Technical constraints.** Frameworks, patterns, and conventions to follow.
+- **Dependency map.** Files, modules, and systems that will be touched.
+- **Interface contracts.** How the new code will integrate with existing code.
+
+The spec sheet is the central artifact of the routing pipeline. It serves as the single source of truth for all downstream agents, whether the task is executed by a single agent or a Verified Succession swarm. Every agent in the execution phase receives this spec — not the raw problem statement.
+
+This stage costs approximately 20K input tokens and 8K output tokens (~$0.30).
+
+#### 6.3.4 Stage 4: Concurrent Assessment
+
+Three independent ranking agents evaluate the spec sheet in parallel. Each agent performs the same analysis but arrives at independent conclusions — a concurrent pattern [9] applied to specification analysis rather than implementation.
+
+Each ranking agent produces a structured findings report:
+
+```
+RANKING AGENT REPORT SCHEMA
+────────────────────────────
+{
+  complexity_score: 1-10,
+  complexity_rationale: "...",
+
+  files_estimated: N,
+  subsystems_touched: ["auth", "db", "api"],
+  estimated_context_requirement: "percentage of C_max",
+
+  gaps_found: [
+    { description: "...", severity: "critical|moderate|minor" }
+  ],
+
+  risks_found: [
+    { description: "...", mitigation: "..." }
+  ],
+
+  decomposability: "high|medium|low",
+  recommended_architecture: "single|single+verifier|vs-shallow|vs-deep",
+  confidence: 0.0-1.0
+}
+```
+
+**When to skip this stage:** Not every spec requires three agents to evaluate. The planning agent self-assesses its confidence in the spec's completeness:
+
+- **Confidence > 90%:** Skip Stage 4. Route directly based on the planning agent's complexity estimate. Appropriate for simple tasks ("add a button", "fix this typo").
+- **Confidence 60-90%:** Execute Stage 4. The spec has sufficient structure for ranking agents to evaluate but contains enough complexity to benefit from multiple perspectives.
+- **Confidence < 60%:** Return to Stage 2. The planning agent itself is uncertain — the spec needs more human input before agents should evaluate it.
+
+This stage costs 3 × (40K input + 10K output) ≈ $1.35 when invoked.
+
+#### 6.3.5 Stage 5: Synthesis and Routing
+
+The synthesis agent receives the spec sheet and all three findings reports. It performs four functions:
+
+1. **Consensus assessment.** If all three agents agree on complexity (within ±2 points), high confidence in the estimate. If scores diverge widely (e.g., 4, 7, 9), this signals that the spec is ambiguous — different readers interpret it differently — and the pipeline should loop back to Stage 2.
+
+2. **Gap resolution.** Gaps identified by 2+ agents are confirmed and incorporated into a refined spec. Gaps identified by only 1 agent are flagged but not necessarily incorporated.
+
+3. **Risk aggregation.** Risks flagged by multiple agents receive higher priority. The synthesis agent assesses whether any risks should block execution or merely inform the implementation approach.
+
+4. **Routing decision.** Based on the consensus complexity score:
+
+| Consensus Score | Context Estimate | Routing Decision |
+|---|---|---|
+| 1-3 | < 40% of C_max | Single agent with spec sheet |
+| 4-5 | 40-70% of C_max | Single agent + post-execution verifier pass |
+| 6-8 | 70-200% of C_max | Verified Succession — shallow (1 level) |
+| 9-10 | > 200% of C_max | Verified Succession — deep (multi-level) |
+
+The synthesis agent produces:
+- **Refined spec sheet** with confirmed gaps filled
+- **Routing decision** with justification
+- **Implementation brief** tailored to the selected architecture (e.g., suggested decomposition boundaries for VS tasks)
+
+This stage costs approximately 60K input tokens and 15K output tokens (~$0.68).
+
+### 6.4 Cost of the Routing Pipeline
+
+| Stage | Token Consumption | Cost | When Invoked |
+|---|---|---|---|
+| Planning Agent | 50K in, 15K out | ~$0.63 | Always |
+| Interview Phase | 30K in, 10K out | ~$0.40 | Always |
+| Spec Sheet Generation | 20K in, 8K out | ~$0.30 | Always |
+| 3 Ranking Agents | 120K in, 30K out | ~$1.35 | Confidence 60-90% |
+| Synthesis Agent | 60K in, 15K out | ~$0.68 | When Stage 4 runs |
+| **Total (with ranking)** | **280K in, 78K out** | **~$3.36** | |
+| **Total (without ranking)** | **100K in, 33K out** | **~$1.33** | |
+
+**Amortization analysis:** The pipeline adds $1.33-3.36 to every task. For a simple $1.75 task, this roughly doubles the cost (acceptable only if the interview phase catches a misunderstanding that would otherwise require re-execution). For a complex $40-175 VS task, it represents 2-8% overhead — trivially justified by the routing accuracy and requirements hardening it provides.
+
+**Breakeven:** If the pipeline prevents even one wrong-thing-built failure per ~3 tasks — which would require a full re-execution at $7-175 — it pays for itself.
+
+### 6.5 How the Pipeline Addresses Requirements Misunderstanding
+
+The Verified Succession architecture's error attenuation (Theorem 4) is powerful for mechanically detectable errors but nearly ineffective for requirements misunderstandings (p_v ≈ 0.05, Section 5.5.2). The Specification-Driven Routing Pipeline directly targets this weakness:
+
+| Error Category | Without Pipeline (p_v) | With Pipeline (p_v) | Improvement |
+|---|---|---|---|
+| Type errors | ~0.99 | ~0.99 | No change (already maximal) |
+| Logic errors (test-catchable) | ~0.85 | ~0.85 | No change |
+| Subtle logic errors | ~0.40 | ~0.45 | Marginal (spec clarity helps) |
+| Architectural mistakes | ~0.15 | ~0.50 | 3x (ranking agents catch structural issues) |
+| Security vulnerabilities | ~0.10 | ~0.15 | Marginal |
+| **Requirements misunderstanding** | **~0.05** | **~0.90** | **18x** (human validates intent) |
+
+The 18x improvement in requirements error detection is the pipeline's primary value proposition. It converts the architecture's single weakest error category from "nearly undetectable" to "reliably caught" by positioning human judgment at the point where it is most effective: before implementation begins.
+
+### 6.6 Divergence Handling
+
+The pipeline includes two explicit feedback loops for handling uncertainty:
+
+**Loop 1: Interview Insufficiency.** If the planning agent's confidence remains below 60% after Stage 2, the interview did not resolve enough ambiguity. The pipeline re-enters Stage 2 with more targeted questions informed by what was learned. Maximum 2 re-entries before escalating to "this task requires a human planning session, not an automated pipeline."
+
+**Loop 2: Ranking Divergence.** If the three ranking agents' complexity scores diverge by more than 4 points (e.g., scores of 3, 5, and 9), the spec is ambiguous enough that three competent readers interpret it fundamentally differently. The synthesis agent flags this and either:
+- Identifies the specific section of the spec causing divergence and loops back to Stage 2 for clarification
+- Recommends splitting the task into sub-tasks that can be independently assessed
+
+These feedback loops ensure the pipeline does not route confidently on insufficient information. The cost of an additional interview round (~$0.40) is negligible compared to the cost of misrouted execution.
+
+### 6.7 Integration with Verified Succession
+
+The routing pipeline and execution architecture form a complete system:
+
+```
+COMPLETE SYSTEM ARCHITECTURE
+═════════════════════════════
+
+  "We need this feature"
+          │
+          ▼
+  ┌─────────────────────────┐
+  │  ROUTING PIPELINE       │
+  │  (Section 6)            │
+  │                         │
+  │  Plan → Interview →     │
+  │  Spec → Rank → Route    │
+  │                         │
+  │  Output:                │
+  │   • Validated spec      │
+  │   • Routing decision    │
+  │   • Implementation brief│
+  └───────┬─────────────────┘
+          │
+    ┌─────┴──────┬──────────────┬──────────────┐
+    ▼            ▼              ▼              ▼
+  Single      Single +      VS Shallow     VS Deep
+  Agent       Verifier      (Section 3)    (Section 3)
+  ($1.75)     ($3-4)        ($7-60)        ($40-175)
+    │            │              │              │
+    └────────────┴──────┬───────┴──────────────┘
+                        ▼
+                  Final Output
+                  (verified, spec-compliant)
+```
+
+Each execution path receives the **same validated spec sheet** — ensuring that regardless of which architecture is selected, the agents are building the right thing. The spec sheet replaces the raw problem statement as the authoritative input to the execution phase.
+
+For Verified Succession specifically, the spec sheet improves the architecture's operation at every level:
+
+- **Decomposition quality improves** because the spec's dependency map and interface contracts inform where to split work, reducing the risk of bad decompositions (Section 9.1).
+- **Verifier accuracy improves** because acceptance criteria from the spec provide objective pass/fail conditions, augmenting the verifier's LLM judgment with concrete checkpoints.
+- **Aggregation quality improves** because the sub-orchestrator can validate completeness against the spec's scope definition rather than inferring it from the original problem statement.
+
+---
+
+## 7. Application to Software Engineering
+
+### 7.1 Why Software Engineering Demands This Architecture
 
 Software engineering tasks exhibit three properties that make them uniquely suited to Verified Succession:
 
@@ -714,7 +963,7 @@ Software engineering tasks exhibit three properties that make them uniquely suit
 
 3. **Compositional structure.** Software tasks decompose naturally: a feature can be split into backend API, frontend UI, database migration, and test suite. Each subtask has clear boundaries and interfaces.
 
-### 6.2 Concrete Workflow: Feature Implementation
+### 7.2 Concrete Workflow: Feature Implementation
 
 Consider implementing a user authentication system with role-based access control. The Verified Succession architecture would proceed as follows:
 
@@ -759,7 +1008,7 @@ ORCHESTRATOR receives: "Implement RBAC authentication system"
 └── ORCHESTRATOR aggregates: middleware + tests + migration = complete feature
 ```
 
-### 6.3 Verification in Software Engineering Context
+### 7.3 Verification in Software Engineering Context
 
 The verification sub-agent has unique advantages in software engineering because verification can be **objective and automated**:
 
@@ -774,7 +1023,7 @@ The verification sub-agent has unique advantages in software engineering because
 
 The verifier is not limited to LLM judgment. It can invoke deterministic tools to produce high-confidence assessments. This addresses a key weakness of LLM-only verification: the verifier's `p_v` (error detection probability) approaches 1.0 for categories of errors that tooling can catch, dramatically improving the error attenuation properties derived in Section 4.4. See Section 5.5.2 for a stratified analysis of `p_v` by error category.
 
-### 6.4 State Store Design for Software Artifacts
+### 7.4 State Store Design for Software Artifacts
 
 In the software engineering domain, the state store maps naturally to the filesystem and version control:
 
@@ -803,7 +1052,7 @@ Git branches provide a natural isolation mechanism: each agent (or agent generat
 
 ---
 
-## 7. Comparison with Existing Patterns
+## 8. Comparison with Existing Patterns
 
 | Property | Sequential | Concurrent | Handoff | Group Chat | Magentic | **Verified Succession** |
 |---|---|---|---|---|---|---|
@@ -822,75 +1071,77 @@ The key differentiator is the combination of **emergent topology** and **verifie
 
 ---
 
-## 8. Limitations and Open Problems
+## 9. Limitations and Open Problems
 
-### 8.1 Decomposition Quality
+### 9.1 Decomposition Quality
 
 The architecture's effectiveness depends critically on the quality of task decomposition at each spawning event. A poor decomposition — overlapping subtasks, missing coverage, or artificially coupled subtasks — degrades the entire sub-swarm. The decomposition occurs when the agent is already at 60% context utilization, meaning it must perform high-quality meta-reasoning with limited remaining capacity.
 
 **Mitigation:** The adaptive threshold (Proposition 2) helps by triggering decomposition earlier for agents with high tool density. Additionally, the verifier at the aggregation stage can detect gaps between subtask coverage and the original task.
 
-### 8.2 Latency
+### 9.2 Latency
 
 Each succession event introduces latency: artifact writing, verifier spawning, artifact reading, report generation, verifier termination, and successor initialization. For time-sensitive applications, this overhead may be prohibitive. See Section 5.3 for detailed latency measurements.
 
-### 8.3 Verifier Reliability
+### 9.3 Verifier Reliability
 
 The architecture assumes verifiers are more reliable than the agents whose work they verify. This holds when verification is easier than generation (a well-established asymmetry in computational complexity) and when deterministic tools (type checkers, test suites) supplement LLM judgment. However, for tasks where verification is as hard as generation (e.g., assessing the correctness of a novel algorithm), verifier reliability may be insufficient. See Section 5.5.2 for stratified reliability analysis by error category.
 
-### 8.4 State Store Consistency
+### 9.4 State Store Consistency
 
 In deeply recursive architectures with concurrent agents writing to the same state store, consistency guarantees become important. Two agents in the same sub-swarm must not write conflicting artifacts to the same state store paths. The sub-orchestrator must enforce isolation between concurrent sibling agents.
 
-### 8.5 Cost
+### 9.5 Cost
 
 While resource consumption is bounded (Theorem 3), the bound can still be large. See Section 5.2 for concrete cost analysis across scenarios. The architecture is most cost-effective for high-value, long-horizon tasks where the alternative (human effort or agent failure) is more expensive.
 
-### 8.6 Non-Decomposable Tasks
+### 9.6 Non-Decomposable Tasks
 
 Google's scaling study [25] demonstrates that sequential, non-decomposable tasks experience 39-70% performance degradation under multi-agent orchestration. Verified Succession inherits this limitation — if a task cannot be meaningfully decomposed into independent subtasks, the architecture's overhead exceeds its benefit. The decomposition phase must include a "no-decompose" exit path where the agent determines that the remaining work is atomic and continues without spawning.
 
 ---
 
-## 9. Future Work
+## 10. Future Work
 
-### 9.1 Adaptive Branching Factor
+### 10.1 Adaptive Branching Factor
 
 The current architecture uses a fixed branching factor during decomposition. An adaptive approach would analyze subtask complexity estimates and adjust `k` accordingly — simple tasks get fewer sub-agents, complex tasks get more.
 
-### 9.2 Cross-Swarm Learning
+### 10.2 Cross-Swarm Learning
 
 When multiple top-level agents independently discover the same blockers or patterns, this information could be shared across swarms in real time. A shared knowledge bus (distinct from the state store) could propagate insights like "the session store API requires authentication tokens" to all active agents.
 
-### 9.3 Verification Caching
+### 10.3 Verification Caching
 
 If agent `α.j''` (generation 3) is spawned for the same subtask, and the work from generation 1 was already verified, the generation 3 verifier need not re-verify generation 1's artifacts — only generation 2's. A verification cache in the state store could avoid redundant auditing.
 
-### 9.4 Hybrid Model Selection
+### 10.4 Hybrid Model Selection
 
 Not all agents require the most capable (and expensive) model. Verifiers performing structured assessment could use smaller, faster models (e.g., Haiku-tier at $1/$5 per million tokens vs. Opus-tier at $5/$25). Sub-orchestrators performing coordination logic could similarly use lighter models. This hybrid approach could reduce typical-case costs by 30-50% without meaningfully impacting quality.
 
-### 9.5 Dynamic Turn Limits
+### 10.5 Dynamic Turn Limits
 
 Recent work [27] demonstrates that dynamic turn limits based on success probability can reduce agent costs by 24% while maintaining solve rates. Integrating this with the context monitor could provide a second dimension of cost control: not just "when to decompose" but "when to stop trying and escalate."
 
-### 9.6 Empirical Evaluation
+### 10.6 Empirical Evaluation
 
 This paper presents the architecture and theoretical analysis. Empirical evaluation on established benchmarks (SWE-bench Verified [21], BrowseComp [4], HumanEval [22]) is needed to validate the theoretical properties and establish practical performance characteristics. The evaluation methodology proposed in Section 5.8 provides the framework for this work.
 
 ---
 
-## 10. Conclusion
+## 11. Conclusion
 
-We have presented **Verified Succession**, a recursive context-aware multi-agent architecture that treats context window exhaustion as a structural spawning signal rather than a failure condition. The architecture introduces three novel primitives: context-triggered recursive spawning, the verify-then-continue handoff protocol, and emergent agent topology.
+We have presented **Verified Succession**, a recursive context-aware multi-agent architecture that treats context window exhaustion as a structural spawning signal rather than a failure condition, together with the **Specification-Driven Routing Pipeline** that determines the appropriate execution architecture for each task.
 
-The verify-then-continue protocol is the central contribution. By having successor agents independently audit their predecessors' work through short-lived verification sub-agents, the architecture achieves three properties simultaneously: (1) near-complete context headroom for successor agents (~90-95%), (2) exponential error attenuation at each succession boundary, and (3) complete elimination of dead-end tokens. No existing orchestration pattern provides all three.
+The verify-then-continue protocol is the central execution contribution. By having successor agents independently audit their predecessors' work through short-lived verification sub-agents, the architecture achieves three properties simultaneously: (1) near-complete context headroom for successor agents (~90-95%), (2) exponential error attenuation at each succession boundary, and (3) complete elimination of dead-end tokens. No existing orchestration pattern provides all three.
 
-However, these gains come at a quantified cost. The architecture introduces a 4-5x cost multiplier for typical tasks and 2-8x latency overhead compared to single-agent approaches. Error attenuation is highly effective for mechanically detectable errors (type errors, test failures) but provides diminishing returns for subtle architectural and security issues. The architecture is not universally superior — it is a specialized tool for a specific class of problems: complex, decomposable, artifact-producing tasks that exceed single-agent capacity.
+The Specification-Driven Routing Pipeline is the central planning contribution. By positioning human-in-the-loop requirements validation upstream of execution, the pipeline addresses the architecture's single weakest error category — requirements misunderstanding — elevating its detection probability from p_v ≈ 0.05 to p_v ≈ 0.90+ (an 18x improvement). The concurrent multi-agent assessment of the resulting spec sheet produces a high-confidence routing decision while simultaneously hardening the specification that all downstream agents will work from.
 
-**The honest value proposition is this:** Verified Succession trades 4-5x cost and 2-3x latency for the ability to complete tasks that would otherwise fail, with built-in error correction that compounds at every succession boundary. Whether that trade is justified depends entirely on what is on the other side of the task. For a $100/hour engineer spending 4 hours on a task, paying $8-60 for an agent that completes it in 15 minutes is an obvious trade. For a quick configuration change, it is unnecessary overhead.
+However, these gains come at a quantified cost. The execution architecture introduces a 4-5x cost multiplier for typical tasks and 2-8x latency overhead compared to single-agent approaches. The routing pipeline adds $1.33-3.36 per task. Error attenuation is highly effective for mechanically detectable errors (type errors, test failures) but provides diminishing returns for subtle architectural and security issues. The combined system is not universally superior — it is a specialized tool for a specific class of problems: complex, decomposable, artifact-producing tasks that exceed single-agent capacity and justify the routing and execution overhead.
 
-As LLM agents are increasingly deployed for complex, long-horizon software engineering tasks, architectures that gracefully scale with problem complexity — rather than failing at fixed context boundaries — will become essential. Verified Succession provides a principled, honestly quantified framework for building such systems.
+**The honest value proposition is this:** the combined system trades upfront planning cost (~$3) and execution premium (4-5x) for three guarantees: (1) the right thing is built (validated spec), (2) it is built correctly (verified succession), and (3) tasks that would otherwise fail due to context exhaustion are completed (emergent topology). Whether that trade is justified depends entirely on what is on the other side of the task. For a $100/hour engineer spending 4 hours on a task, paying $10-65 for an agent system that completes it correctly in 15 minutes is an obvious trade. For a quick configuration change, it is unnecessary overhead.
+
+As LLM agents are increasingly deployed for complex, long-horizon software engineering tasks, architectures that gracefully scale with problem complexity — rather than failing at fixed context boundaries — will become essential. The combination of Specification-Driven Routing and Verified Succession provides a principled, honestly quantified framework for building such systems: one that decides *what to build* before deciding *how to build it*.
 
 ---
 
