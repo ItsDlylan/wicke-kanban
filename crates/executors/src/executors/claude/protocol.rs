@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// Handles bidirectional control protocol communication
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ProtocolPeer {
     stdin: Arc<Mutex<ChildStdin>>,
 }

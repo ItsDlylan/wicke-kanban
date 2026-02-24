@@ -381,26 +381,28 @@ impl ClaudeCode {
         // Create cancellation token for graceful shutdown
         let cancel = CancellationToken::new();
 
-        // Spawn task to handle the SDK client with control protocol
+        // Set up the SDK client and protocol peer before spawning
         let prompt_clone = combined_prompt.clone();
         let approvals_clone = self.approvals_service.clone();
         let repo_context = env.repo_context.clone();
         let commit_reminder_prompt = env.commit_reminder_prompt.clone();
         let cancel_for_task = cancel.clone();
-        tokio::spawn(async move {
-            let log_writer = LogWriter::new(new_stdout);
-            let client = ClaudeAgentClient::new(
-                log_writer.clone(),
-                approvals_clone,
-                repo_context,
-                commit_reminder_prompt,
-                cancel_for_task.clone(),
-            );
-            let protocol_peer =
-                ProtocolPeer::spawn(child_stdin, child_stdout, client.clone(), cancel_for_task);
 
-            // Initialize control protocol
-            if let Err(e) = protocol_peer.initialize(hooks).await {
+        let log_writer = LogWriter::new(new_stdout);
+        let client = ClaudeAgentClient::new(
+            log_writer.clone(),
+            approvals_clone,
+            repo_context,
+            commit_reminder_prompt,
+            cancel_for_task.clone(),
+        );
+        let protocol_peer =
+            ProtocolPeer::spawn(child_stdin, child_stdout, client.clone(), cancel_for_task);
+
+        // Spawn init sequence asynchronously
+        let init_peer = protocol_peer.clone();
+        tokio::spawn(async move {
+            if let Err(e) = init_peer.initialize(hooks).await {
                 tracing::error!("Failed to initialize control protocol: {e}");
                 let _ = log_writer
                     .log_raw(&format!("Error: Failed to initialize - {e}"))
@@ -408,12 +410,12 @@ impl ClaudeCode {
                 return;
             }
 
-            if let Err(e) = protocol_peer.set_permission_mode(permission_mode).await {
+            if let Err(e) = init_peer.set_permission_mode(permission_mode).await {
                 tracing::warn!("Failed to set permission mode to {permission_mode}: {e}");
             }
 
             // Send user message
-            if let Err(e) = protocol_peer.send_user_message(prompt_clone).await {
+            if let Err(e) = init_peer.send_user_message(prompt_clone).await {
                 tracing::error!("Failed to send prompt: {e}");
                 let _ = log_writer
                     .log_raw(&format!("Error: Failed to send prompt - {e}"))
@@ -425,6 +427,7 @@ impl ClaudeCode {
             child,
             exit_signal: None,
             cancel: Some(cancel),
+            protocol_peer: Some(protocol_peer),
         })
     }
 }

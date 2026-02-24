@@ -1740,4 +1740,16 @@ pub trait ContainerService {
         tracing::debug!("Started next action: {:?}", next_action);
         Ok(())
     }
+
+    /// Send a message to a running agent via the control protocol.
+    /// Default implementation returns an error; overridden by LocalContainerService.
+    async fn send_message_to_agent(
+        &self,
+        _execution_process_id: Uuid,
+        _message: String,
+    ) -> Result<(), ContainerError> {
+        Err(ContainerError::Other(anyhow!(
+            "send_message_to_agent not supported"
+        )))
+    }
 }
