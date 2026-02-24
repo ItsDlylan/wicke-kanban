@@ -36,7 +36,8 @@ export function useTaskMutations(projectId?: string) {
           ),
         });
       }
-      if (projectId) {
+      // Epics don't have attempts — stay on the current page (e.g. planning board)
+      if (projectId && createdTask.task_type !== 'epic') {
         navigate(`${paths.task(projectId, createdTask.id)}/attempts/latest`);
       }
     },

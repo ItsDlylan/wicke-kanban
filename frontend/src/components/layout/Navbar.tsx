@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +41,7 @@ function NavDivider() {
 export function Navbar() {
   const location = useLocation();
   const { projectId, project } = useProject();
+  const [searchParams] = useSearchParams();
   const { query, setQuery, active, clear, registerInputRef } = useSearch();
   const handleOpenInEditor = useOpenProjectInEditor(project || null);
 
@@ -54,9 +55,14 @@ export function Navbar() {
     [registerInputRef]
   );
 
+  const isPlanningBoard = searchParams.get('board') === 'planning';
   const handleCreateTask = () => {
     if (projectId) {
-      openTaskForm({ mode: 'create', projectId });
+      openTaskForm({
+        mode: 'create',
+        projectId,
+        ...(isPlanningBoard ? { taskType: 'epic' as const } : {}),
+      });
     }
   };
 

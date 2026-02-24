@@ -661,7 +661,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                           field.handleChange(checked)
                         }
                         disabled={isSubmitting}
-                        className="data-[state=checked]:bg-teal-600 dark:data-[state=checked]:bg-teal-500"
+                        className="data-[state=unchecked]:bg-zinc-300 dark:data-[state=unchecked]:bg-zinc-600 data-[state=checked]:bg-teal-600 dark:data-[state=checked]:bg-teal-500 [&>span[data-state=unchecked]]:bg-white dark:[&>span[data-state=unchecked]]:bg-zinc-300"
                       />
                       <Label
                         htmlFor="human-task-switch"
