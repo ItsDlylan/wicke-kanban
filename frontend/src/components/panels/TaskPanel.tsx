@@ -13,10 +13,6 @@ import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
 import { Alert } from '../ui/alert';
 import { ExternalLink, GitBranch, Loader2, PlusIcon } from 'lucide-react';
-import {
-  ButtonGroup,
-  ButtonGroupItem,
-} from '../ui-new/primitives/IconButtonGroup';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -209,20 +205,22 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
         <div className="p-6 flex flex-col h-full max-h-[calc(100vh-8rem)]">
           {/* Tab switcher */}
           <div className="mb-4 flex-shrink-0">
-            <ButtonGroup>
-              <ButtonGroupItem
-                active={activeTab === 'details'}
-                onClick={() => setActiveTab('details')}
-              >
-                Details
-              </ButtonGroupItem>
-              <ButtonGroupItem
-                active={activeTab === 'plan'}
-                onClick={() => setActiveTab('plan')}
-              >
-                Plan
-              </ButtonGroupItem>
-            </ButtonGroup>
+            <div className="inline-flex rounded-md bg-muted p-0.5 gap-0.5">
+              {(['details', 'plan'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-all ${
+                    activeTab === tab
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {tab === 'details' ? 'Details' : 'Plan'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {activeTab === 'details' && (
