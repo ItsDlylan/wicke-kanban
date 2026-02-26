@@ -6,7 +6,7 @@ CREATE TABLE swarms (
     workspace_id    BLOB NOT NULL REFERENCES workspaces(id),
     parent_agent_id BLOB REFERENCES swarm_agents(id),
     status          TEXT NOT NULL DEFAULT 'pending'
-                    CHECK(status IN ('pending','running','completed','failed')),
+                    CHECK(status IN ('pending','running','completed','failed','cancelled')),
     depth           INTEGER NOT NULL DEFAULT 0,
     max_depth       INTEGER NOT NULL DEFAULT 3,
     routing_decision TEXT,

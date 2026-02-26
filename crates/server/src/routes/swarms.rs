@@ -4,11 +4,7 @@ use axum::{
     response::Json as ResponseJson,
     routing::{get, post},
 };
-use db::models::{
-    swarm::{Swarm, SwarmStatus},
-    swarm_agent::SwarmAgent,
-    swarm_succession::SwarmSuccession,
-};
+use db::models::{swarm::Swarm, swarm_agent::SwarmAgent, swarm_succession::SwarmSuccession};
 use deployment::Deployment;
 use serde::Serialize;
 use ts_rs::TS;
@@ -96,19 +92,13 @@ pub async fn cancel_swarm(
     State(deployment): State<DeploymentImpl>,
     Path(swarm_id): Path<Uuid>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
-    let pool = &deployment.db().pool;
-
-    let swarm = Swarm::find_by_id(pool, swarm_id)
-        .await?
-        .ok_or(ApiError::BadRequest("Swarm not found".to_string()))?;
-
-    if swarm.status != SwarmStatus::Running && swarm.status != SwarmStatus::Pending {
-        return Err(ApiError::BadRequest(
-            "Swarm is not in a cancellable state".to_string(),
-        ));
-    }
-
-    Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
+    services::services::swarm_coordinator::cancel_swarm(
+        &deployment.db().pool,
+        deployment.container(),
+        swarm_id,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     Ok(ResponseJson(ApiResponse::success(())))
 }

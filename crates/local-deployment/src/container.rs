@@ -1540,6 +1540,14 @@ impl ContainerService for LocalContainerService {
         Ok(())
     }
 
+    async fn get_protocol_peer(&self, execution_process_id: &Uuid) -> Option<ProtocolPeer> {
+        self.protocol_peers
+            .read()
+            .await
+            .get(execution_process_id)
+            .cloned()
+    }
+
     async fn send_message_to_agent(
         &self,
         execution_process_id: Uuid,

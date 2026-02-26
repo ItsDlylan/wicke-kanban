@@ -36,7 +36,7 @@ use executors::{
         coding_agent_initial::CodingAgentInitialRequest,
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
-    executors::{ExecutorError, StandardCodingAgentExecutor},
+    executors::{ExecutorError, ProtocolPeer, StandardCodingAgentExecutor},
     logs::{
         NormalizedEntry, NormalizedEntryError, NormalizedEntryType,
         utils::{
@@ -1454,6 +1454,39 @@ pub trait ContainerService {
             .await?
             .ok_or(SqlxError::RowNotFound)?;
 
+        // Check if task should be routed to swarm execution
+        if let Some(ref routing) = task.routing_decision {
+            if routing == "vs_shallow" || routing == "vs_deep" {
+                use db::models::swarm_agent::SwarmAgent;
+
+                use super::swarm_coordinator;
+
+                let swarm = swarm_coordinator::start_swarm(
+                    &self.db().pool,
+                    self,
+                    &task,
+                    &workspace,
+                    Some(routing.clone()),
+                    &executor_profile_id,
+                )
+                .await
+                .map_err(|e| ContainerError::Other(anyhow!("Swarm start failed: {e}")))?;
+
+                // Return the first running agent's execution process
+                let agents = SwarmAgent::find_by_swarm_id(&self.db().pool, swarm.id).await?;
+                if let Some(exec_id) = agents.iter().find_map(|a| a.execution_process_id) {
+                    let ep = ExecutionProcess::find_by_id(&self.db().pool, exec_id)
+                        .await?
+                        .ok_or(SqlxError::RowNotFound)?;
+                    return Ok(ep);
+                }
+                return Err(ContainerError::Other(anyhow!(
+                    "Swarm started but no agent execution process found"
+                )));
+            }
+            // single_verifier or other routing: falls through to normal single-agent
+        }
+
         // Create a session for this workspace
         let session = Session::create(
             &self.db().pool,
@@ -1771,6 +1804,12 @@ pub trait ContainerService {
 
         tracing::debug!("Started next action: {:?}", next_action);
         Ok(())
+    }
+
+    /// Get the protocol peer for a running execution process.
+    /// Default implementation returns None; overridden by LocalContainerService.
+    async fn get_protocol_peer(&self, _execution_process_id: &Uuid) -> Option<ProtocolPeer> {
+        None
     }
 
     /// Send a message to a running agent via the control protocol.

@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use db::models::{
+    execution_process::{ExecutionProcess, ExecutionProcessStatus},
     session::CreateSession,
     swarm::{Swarm, SwarmStatus},
     swarm_agent::{SwarmAgent, SwarmAgentStatus},
@@ -53,7 +54,7 @@ pub enum SwarmCoordinatorError {
 // Safety caps
 const MAX_GENERATIONS: i64 = 5;
 const MAX_TOTAL_AGENTS: usize = 50;
-const DEFAULT_CONTEXT_THRESHOLD: f64 = 0.8;
+const DEFAULT_CONTEXT_THRESHOLD: f64 = 0.6;
 
 #[derive(Debug, Deserialize)]
 pub struct VerificationReport {
@@ -175,8 +176,17 @@ pub async fn spawn_next_agent(
                 return Err(SwarmCoordinatorError::MaxAgentsExceeded(swarm_id));
             }
 
-            // Build agent prompt
-            let prompt = build_agent_prompt(&agent.subtask_description, None);
+            // Build agent prompt — enrich with verification report for successors
+            let prompt = if agent.predecessor_id.is_some() {
+                // This is a successor — look up the succession's verification report
+                let succession =
+                    SwarmSuccession::find_active_for_agent(pool, agent.predecessor_id.unwrap())
+                        .await?;
+                let report = succession.and_then(|s| s.verification_report);
+                build_agent_prompt(&agent.subtask_description, report.as_deref())
+            } else {
+                build_agent_prompt(&agent.subtask_description, None)
+            };
 
             // Get parent workspace for branch/container info
             let parent_workspace = Workspace::find_by_id(pool, swarm.workspace_id)
@@ -265,13 +275,14 @@ pub async fn spawn_next_agent(
 
             // Start context monitor for this execution
             if let Some(msg_store) = container.get_msg_store_by_id(&execution_process.id).await {
+                let protocol_peer = container.get_protocol_peer(&execution_process.id).await;
                 start_context_monitor(
                     pool.clone(),
-                    container,
                     agent.id,
                     execution_process.id,
                     msg_store,
                     agent.context_threshold,
+                    protocol_peer,
                 );
             }
 
@@ -361,6 +372,42 @@ pub async fn on_threshold_crossed(
     Ok(())
 }
 
+/// Cancel a swarm, stopping all running agents and marking the swarm as cancelled.
+pub async fn cancel_swarm(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    swarm_id: Uuid,
+) -> Result<(), SwarmCoordinatorError> {
+    let swarm = Swarm::find_by_id(pool, swarm_id)
+        .await?
+        .ok_or(SwarmCoordinatorError::SwarmNotFound(swarm_id))?;
+
+    if swarm.status != SwarmStatus::Running && swarm.status != SwarmStatus::Pending {
+        return Ok(()); // Already terminated
+    }
+
+    // Find and stop all running agents
+    let agents = SwarmAgent::find_by_swarm_id(pool, swarm_id).await?;
+    for agent in &agents {
+        if agent.status == SwarmAgentStatus::Running {
+            if let Some(exec_id) = agent.execution_process_id {
+                if let Ok(Some(exec_process)) = ExecutionProcess::find_by_id(pool, exec_id).await {
+                    if let Err(e) = container
+                        .stop_execution(&exec_process, ExecutionProcessStatus::Killed)
+                        .await
+                    {
+                        tracing::warn!("Failed to stop agent {} execution: {}", agent.id, e);
+                    }
+                }
+            }
+            SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Failed).await?;
+        }
+    }
+
+    Swarm::update_status(pool, swarm_id, SwarmStatus::Cancelled).await?;
+    Ok(())
+}
+
 /// Called from finalize_task() when an execution belonging to a swarm agent completes.
 pub async fn on_agent_completed(
     pool: &SqlitePool,
@@ -437,16 +484,33 @@ async fn begin_succession(
         std::path::PathBuf::from(".")
     };
 
-    // Get git diff for verifier (best-effort)
-    let git_diff = get_git_diff_summary(&working_dir);
+    // Get git diff for verifier (best-effort, blocking I/O)
+    let working_dir_for_diff = working_dir.clone();
+    let git_diff = tokio::task::spawn_blocking(move || get_git_diff_summary(&working_dir_for_diff))
+        .await
+        .unwrap_or_else(|_| "(git diff panicked)".to_string());
 
-    // Run verifier
-    let report = match run_verifier(
-        &agent.subtask_description,
-        &git_diff,
-        &self_assessment,
-        &working_dir,
-    ) {
+    // Run verifier (blocking I/O — spawns `claude --print`)
+    let subtask = agent.subtask_description.clone();
+    let assessment = self_assessment.clone();
+    let working_dir_for_verifier = working_dir.clone();
+    let git_diff_for_verifier = git_diff.clone();
+    let verifier_result = tokio::task::spawn_blocking(move || {
+        run_verifier(
+            &subtask,
+            &git_diff_for_verifier,
+            &assessment,
+            &working_dir_for_verifier,
+        )
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(SwarmCoordinatorError::VerifierFailed(
+            "Verifier panicked".into(),
+        ))
+    });
+
+    let report = match verifier_result {
         Ok(report) => report,
         Err(e) => {
             tracing::warn!("Verifier failed for agent {}: {}", agent.id, e);
@@ -485,20 +549,13 @@ async fn begin_succession(
     )
     .await?;
 
-    // Create successor agent
-    let successor_prompt = if recovery_strategy == "corrective" {
-        // Successor gets predecessor's verification report
-        build_agent_prompt(&agent.subtask_description, Some(&report_json))
-    } else {
-        // Clean restart: only original subtask
-        build_agent_prompt(&agent.subtask_description, None)
-    };
-
+    // Create successor agent with the ORIGINAL subtask description (not the rendered prompt).
+    // Prompt enrichment with verification report happens at execution time in spawn_next_agent.
     let successor = SwarmAgent::create(
         pool,
         Uuid::new_v4(),
         swarm.id,
-        successor_prompt,
+        agent.subtask_description.clone(),
         agent.generation + 1,
         Some(agent.id),
         DEFAULT_CONTEXT_THRESHOLD,
@@ -594,27 +651,12 @@ fn parse_verification_output(output: &str) -> Result<VerificationReport, SwarmCo
     let json_str = if json_str.starts_with('{') {
         json_str
     } else {
-        find_json_object_start(json_str).unwrap_or(json_str)
+        utils::text::find_json_object_start(json_str).unwrap_or(json_str)
     };
 
     serde_json::from_str(json_str).map_err(|e| {
         SwarmCoordinatorError::VerifierFailed(format!("Failed to parse verification report: {e}"))
     })
-}
-
-/// Find the start of a JSON object in text (copied from decomposer pattern).
-fn find_json_object_start(s: &str) -> Option<&str> {
-    let last_brace = s.rfind('}')?;
-    let mut search_from = 0;
-    while let Some(pos) = s[search_from..].find('{') {
-        let abs_pos = search_from + pos;
-        let after = s[abs_pos + 1..].trim_start();
-        if after.starts_with('"') {
-            return Some(&s[abs_pos..=last_brace]);
-        }
-        search_from = abs_pos + 1;
-    }
-    None
 }
 
 /// Mark a swarm as completed and handle any parent linkage.
@@ -659,18 +701,14 @@ fn get_git_diff_summary(working_dir: &Path) -> String {
 /// task that triggers succession on threshold.
 fn start_context_monitor(
     pool: SqlitePool,
-    _container: &(impl ContainerService + Sync + ?Sized),
     agent_id: Uuid,
     execution_process_id: Uuid,
     msg_store: Arc<utils::msg_store::MsgStore>,
     threshold: f64,
+    protocol_peer: Option<executors::executors::ProtocolPeer>,
 ) {
     let (_handle, rx) = ContextMonitor::watch(execution_process_id, msg_store, threshold);
 
-    // We can't hold a reference to `container` in the spawned task, so the
-    // threshold crossing will be handled when the agent's execution completes
-    // in on_agent_completed() by checking the agent's status (Threshold).
-    // The monitor just marks the agent status.
     let pool_clone = pool.clone();
     tokio::spawn(async move {
         match rx.await {
@@ -707,6 +745,24 @@ fn start_context_monitor(
                         agent_id,
                         e
                     );
+                }
+
+                // Send graceful shutdown message via ProtocolPeer
+                if let Some(peer) = protocol_peer {
+                    let shutdown_msg =
+                        "IMPORTANT: You have reached your context utilization threshold.\n\
+                        Please wrap up your current work immediately:\n\
+                        1. Save all changes (git add + commit)\n\
+                        2. Write a brief self-assessment of what you completed and what remains\n\
+                        3. Exit gracefully"
+                            .to_string();
+                    if let Err(e) = peer.send_user_message(shutdown_msg).await {
+                        tracing::warn!(
+                            "Failed to send shutdown message to agent {}: {}",
+                            agent_id,
+                            e
+                        );
+                    }
                 }
             }
             Err(_) => {
@@ -769,21 +825,5 @@ mod tests {
         let output = "Here is my evaluation:\n{\"completed\": [\"done\"], \"issues\": [], \"remaining\": [], \"confidence\": 0.9}\nThat's all.";
         let report = parse_verification_output(output).unwrap();
         assert_eq!(report.completed, vec!["done"]);
-    }
-
-    #[test]
-    fn test_find_json_object_start() {
-        let s = "some text {\"key\": \"value\"}";
-        let result = find_json_object_start(s);
-        assert!(result.is_some());
-        assert!(result.unwrap().starts_with('{'));
-    }
-
-    #[test]
-    fn test_find_json_object_start_with_url_braces() {
-        let s = "Route {event}/path\n{\"key\": \"value\"}";
-        let result = find_json_object_start(s);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), "{\"key\": \"value\"}");
     }
 }

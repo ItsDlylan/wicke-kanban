@@ -17,6 +17,10 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
     className: 'bg-green-500/20 text-green-400',
   },
   failed: { label: 'Failed', className: 'bg-red-500/20 text-red-400' },
+  cancelled: {
+    label: 'Cancelled',
+    className: 'bg-orange-500/20 text-orange-400',
+  },
 };
 
 interface SwarmPanelContainerProps {

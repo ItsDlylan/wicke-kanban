@@ -133,23 +133,6 @@ pub fn run_assessment(prompt: &str, working_dir: &Path) -> Result<String, SpecAs
     Ok(stdout)
 }
 
-/// Find the start of a JSON object in text that may contain bare `{` in URLs.
-/// Returns the slice from the first `{` that is followed by optional whitespace
-/// then `"` (indicating a JSON key), through the last `}`.
-fn find_json_object_start(s: &str) -> Option<&str> {
-    let last_brace = s.rfind('}')?;
-    let mut search_from = 0;
-    while let Some(pos) = s[search_from..].find('{') {
-        let abs_pos = search_from + pos;
-        let after = s[abs_pos + 1..].trim_start();
-        if after.starts_with('"') {
-            return Some(&s[abs_pos..=last_brace]);
-        }
-        search_from = abs_pos + 1;
-    }
-    None
-}
-
 /// Parse the raw output from Claude into a SpecAssessment.
 pub fn parse_assessment_output(output: &str) -> Result<SpecAssessment, SpecAssessorError> {
     let trimmed = output.trim();
@@ -172,7 +155,7 @@ pub fn parse_assessment_output(output: &str) -> Result<SpecAssessment, SpecAsses
     let json_str = if json_str.starts_with('{') {
         json_str
     } else {
-        find_json_object_start(json_str).unwrap_or(json_str)
+        utils::text::find_json_object_start(json_str).unwrap_or(json_str)
     };
 
     let result: SpecAssessment = serde_json::from_str(json_str)

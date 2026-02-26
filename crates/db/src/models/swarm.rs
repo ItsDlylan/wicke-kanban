@@ -17,6 +17,7 @@ pub enum SwarmStatus {
     Running,
     Completed,
     Failed,
+    Cancelled,
 }
 
 #[derive(
