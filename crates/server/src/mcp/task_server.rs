@@ -63,6 +63,10 @@ pub struct McpCreateTaskRequest {
         description = "Optional status for the task. Valid values: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled. Defaults to backlog."
     )]
     pub status: Option<String>,
+    #[schemars(
+        description = "Optional parent task ID. Set this to make the new task a child/story of the specified parent task."
+    )]
+    pub parent_task_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -215,6 +219,10 @@ pub struct McpCreateTaskWithContextRequest {
     pub error_output: Option<String>,
     #[schemars(description = "Command that was run when the issue occurred")]
     pub command: Option<String>,
+    #[schemars(
+        description = "Optional parent task ID. Set this to make the new task a child/story of the specified parent task."
+    )]
+    pub parent_task_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -572,6 +580,7 @@ impl TaskServer {
             title,
             description,
             status,
+            parent_task_id,
         }): Parameters<McpCreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
@@ -600,7 +609,7 @@ impl TaskServer {
             status: task_status,
             task_type: None,
             parent_workspace_id: None,
-            parent_task_id: None,
+            parent_task_id,
             image_ids: None,
             sort_order: None,
             plan_status: None,
@@ -817,6 +826,7 @@ impl TaskServer {
             git_ref,
             error_output,
             command,
+            parent_task_id,
         }): Parameters<McpCreateTaskWithContextRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
@@ -873,7 +883,7 @@ impl TaskServer {
             status: Some(TaskStatus::Backlog),
             task_type: None,
             parent_workspace_id: None,
-            parent_task_id: None,
+            parent_task_id,
             image_ids: None,
             sort_order: None,
             plan_status: None,
