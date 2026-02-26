@@ -16,6 +16,7 @@ import { openTaskForm } from '@/lib/openTaskForm';
 import { useProject } from '@/contexts/ProjectContext';
 import { useOpenProjectInEditor } from '@/hooks/useOpenProjectInEditor';
 import { OpenInIdeButton } from '@/components/ide/OpenInIdeButton';
+import { UsageIndicator } from '@/components/ui-new/primitives/UsageIndicator';
 import { useProjectRepos } from '@/hooks';
 
 const INTERNAL_NAV = [
@@ -127,6 +128,7 @@ export function Navbar() {
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-1">
+            <UsageIndicator />
             {projectId ? (
               <>
                 <div className="flex items-center gap-1">
