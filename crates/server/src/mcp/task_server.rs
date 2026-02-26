@@ -1,17 +1,8 @@
-use std::str::FromStr;
-
 use api_types::{
-    Issue, ListIssuesResponse, ListOrganizationsResponse, ListProjectStatusesResponse,
-    MutationResponse, ProjectStatus,
+    Issue, IssueComment, ListIssuesResponse, ListOrganizationsResponse,
+    ListProjectStatusesResponse, MutationResponse, ProjectStatus,
 };
-use db::models::{
-    project::Project,
-    repo::Repo,
-    tag::Tag,
-    task::{CreateTask, TaskWithAttemptStatus},
-    workspace::{Workspace, WorkspaceContext},
-};
-use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
+use db::models::{tag::Tag, workspace::WorkspaceContext};
 use regex::Regex;
 use rmcp::{
     ErrorData, ServerHandler,
@@ -25,9 +16,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
 use uuid::Uuid;
 
-use crate::routes::{
-    containers::ContainerQuery, task_attempts::WorkspaceRepoInput, tasks::CreateAndStartTaskRequest,
-};
+use crate::routes::containers::ContainerQuery;
 
 // ── MCP request/response types ──────────────────────────────────────────────
 
@@ -69,79 +58,6 @@ impl ProjectSummary {
             updated_at: project.updated_at.to_rfc3339(),
         }
     }
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpRepoSummary {
-    #[schemars(description = "The unique identifier of the repository")]
-    pub id: String,
-    #[schemars(description = "The name of the repository")]
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct ListReposRequest {}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetRepoRequest {
-    #[schemars(description = "The ID of the repository to retrieve")]
-    pub repo_id: Uuid,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct RepoDetails {
-    #[schemars(description = "The unique identifier of the repository")]
-    pub id: String,
-    #[schemars(description = "The name of the repository")]
-    pub name: String,
-    #[schemars(description = "The display name of the repository")]
-    pub display_name: String,
-    #[schemars(description = "The setup script that runs when initializing a workspace")]
-    pub setup_script: Option<String>,
-    #[schemars(description = "The cleanup script that runs when tearing down a workspace")]
-    pub cleanup_script: Option<String>,
-    #[schemars(description = "The dev server script that starts the development server")]
-    pub dev_server_script: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct UpdateSetupScriptRequest {
-    #[schemars(description = "The ID of the repository to update")]
-    pub repo_id: Uuid,
-    #[schemars(description = "The new setup script content (use empty string to clear)")]
-    pub script: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct UpdateCleanupScriptRequest {
-    #[schemars(description = "The ID of the repository to update")]
-    pub repo_id: Uuid,
-    #[schemars(description = "The new cleanup script content (use empty string to clear)")]
-    pub script: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct UpdateDevServerScriptRequest {
-    #[schemars(description = "The ID of the repository to update")]
-    pub repo_id: Uuid,
-    #[schemars(description = "The new dev server script content (use empty string to clear)")]
-    pub script: String,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct UpdateRepoScriptResponse {
-    #[schemars(description = "Whether the update was successful")]
-    pub success: bool,
-    #[schemars(description = "The repository ID that was updated")]
-    pub repo_id: String,
-    #[schemars(description = "The script field that was updated")]
-    pub field: String,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct ListReposResponse {
-    pub repos: Vec<McpRepoSummary>,
-    pub count: usize,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -263,52 +179,72 @@ pub struct McpGetIssueResponse {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpWorkspaceRepoInput {
-    #[schemars(description = "The repository ID")]
-    pub repo_id: Uuid,
-    #[schemars(description = "The base branch for this repository")]
-    pub base_branch: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct StartWorkspaceSessionRequest {
-    #[schemars(description = "A title for the workspace (used as the task name)")]
-    pub title: String,
+pub struct McpSearchIssuesRequest {
     #[schemars(
-        description = "The coding agent executor to run ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID')"
+        description = "The ID of the project to search issues in. Optional if running inside a workspace linked to a remote project."
     )]
-    pub executor: String,
-    #[schemars(description = "Optional executor variant, if needed")]
-    pub variant: Option<String>,
-    #[schemars(description = "Base branch for each repository in the project")]
-    pub repos: Vec<McpWorkspaceRepoInput>,
-    #[schemars(
-        description = "Optional issue ID to link the workspace to. When provided, the workspace will be associated with this remote issue."
-    )]
-    pub issue_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
+    #[schemars(description = "Search query to match against issue titles")]
+    pub query: String,
+    #[schemars(description = "Max results (default 10)")]
+    pub limit: Option<i32>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct StartWorkspaceSessionResponse {
-    pub workspace_id: String,
+pub struct McpSearchIssuesResponse {
+    pub issues: Vec<IssueSummary>,
+    pub count: usize,
+    pub project_id: String,
+    pub query: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpLinkWorkspaceRequest {
-    #[schemars(description = "The workspace ID to link")]
-    pub workspace_id: Uuid,
-    #[schemars(description = "The issue ID to link the workspace to")]
+pub struct McpAddCommentRequest {
+    #[schemars(description = "The ID of the issue to comment on")]
     pub issue_id: Uuid,
+    #[schemars(description = "The comment message (supports markdown)")]
+    pub message: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpLinkWorkspaceResponse {
-    #[schemars(description = "Whether the linking was successful")]
-    pub success: bool,
-    #[schemars(description = "The workspace ID that was linked")]
-    pub workspace_id: String,
-    #[schemars(description = "The issue ID it was linked to")]
+pub struct McpAddCommentResponse {
+    pub comment_id: String,
     pub issue_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpCreateIssueWithContextRequest {
+    #[schemars(
+        description = "The ID of the project to create the issue in. Optional if running inside a workspace linked to a remote project."
+    )]
+    pub project_id: Option<Uuid>,
+    #[schemars(description = "Issue title")]
+    pub title: String,
+    #[schemars(description = "High-level summary of the issue")]
+    pub summary: Option<String>,
+    #[schemars(description = "Repository name where the issue was found")]
+    pub repo_name: Option<String>,
+    #[schemars(description = "File path relevant to the issue")]
+    pub file_path: Option<String>,
+    #[schemars(description = "Line number in the file")]
+    pub line_number: Option<u32>,
+    #[schemars(description = "Git ref (commit hash or branch)")]
+    pub git_ref: Option<String>,
+    #[schemars(description = "Error output or stack trace")]
+    pub error_output: Option<String>,
+    #[schemars(description = "Command that was run when the issue occurred")]
+    pub command: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct McpCreateIssueWithContextResponse {
+    pub issue_id: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct McpPingResponse {
+    pub status: String,
+    pub version: String,
 }
 
 // ── Server struct ───────────────────────────────────────────────────────────
@@ -730,25 +666,6 @@ impl TaskServer {
         }
     }
 
-    /// Links a workspace to a remote issue by fetching the issue's project_id
-    /// and calling the link endpoint.
-    async fn link_workspace_to_issue(
-        &self,
-        workspace_id: Uuid,
-        issue_id: Uuid,
-    ) -> Result<(), CallToolResult> {
-        let issue_url = self.url(&format!("/api/remote/issues/{}", issue_id));
-        let issue: Issue = self.send_json(self.client.get(&issue_url)).await?;
-
-        let link_url = self.url(&format!("/api/task-attempts/{}/link", workspace_id));
-        let link_payload = serde_json::json!({
-            "project_id": issue.project_id,
-            "issue_id": issue_id,
-        });
-        self.send_empty_json(self.client.post(&link_url).json(&link_payload))
-            .await
-    }
-
     /// Converts an Issue to IssueDetails, resolving status_id to name.
     async fn issue_to_details(&self, issue: &Issue) -> IssueDetails {
         let status = self
@@ -885,142 +802,6 @@ impl TaskServer {
         })
     }
 
-    #[tool(description = "List all repositories.")]
-    async fn list_repos(
-        &self,
-        Parameters(_): Parameters<ListReposRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url("/api/repos");
-        let repos: Vec<Repo> = match self.send_json(self.client.get(&url)).await {
-            Ok(rs) => rs,
-            Err(e) => return Ok(e),
-        };
-
-        let repo_summaries: Vec<McpRepoSummary> = repos
-            .into_iter()
-            .map(|r| McpRepoSummary {
-                id: r.id.to_string(),
-                name: r.name,
-            })
-            .collect();
-
-        let response = ListReposResponse {
-            count: repo_summaries.len(),
-            repos: repo_summaries,
-        };
-
-        TaskServer::success(&response)
-    }
-
-    #[tool(
-        description = "Get detailed information about a repository including its scripts. Use `list_repos` to find available repo IDs."
-    )]
-    async fn get_repo(
-        &self,
-        Parameters(GetRepoRequest { repo_id }): Parameters<GetRepoRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/repos/{}", repo_id));
-        let repo: Repo = match self.send_json(self.client.get(&url)).await {
-            Ok(r) => r,
-            Err(e) => return Ok(e),
-        };
-        TaskServer::success(&RepoDetails {
-            id: repo.id.to_string(),
-            name: repo.name,
-            display_name: repo.display_name,
-            setup_script: repo.setup_script,
-            cleanup_script: repo.cleanup_script,
-            dev_server_script: repo.dev_server_script,
-        })
-    }
-
-    #[tool(
-        description = "Update a repository's setup script. The setup script runs when initializing a workspace."
-    )]
-    async fn update_setup_script(
-        &self,
-        Parameters(UpdateSetupScriptRequest { repo_id, script }): Parameters<
-            UpdateSetupScriptRequest,
-        >,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/repos/{}", repo_id));
-        let script_value = if script.is_empty() {
-            None
-        } else {
-            Some(script)
-        };
-        let payload = serde_json::json!({
-            "setup_script": script_value
-        });
-        let _repo: Repo = match self.send_json(self.client.put(&url).json(&payload)).await {
-            Ok(r) => r,
-            Err(e) => return Ok(e),
-        };
-        TaskServer::success(&UpdateRepoScriptResponse {
-            success: true,
-            repo_id: repo_id.to_string(),
-            field: "setup_script".to_string(),
-        })
-    }
-
-    #[tool(
-        description = "Update a repository's cleanup script. The cleanup script runs when tearing down a workspace."
-    )]
-    async fn update_cleanup_script(
-        &self,
-        Parameters(UpdateCleanupScriptRequest { repo_id, script }): Parameters<
-            UpdateCleanupScriptRequest,
-        >,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/repos/{}", repo_id));
-        let script_value = if script.is_empty() {
-            None
-        } else {
-            Some(script)
-        };
-        let payload = serde_json::json!({
-            "cleanup_script": script_value
-        });
-        let _repo: Repo = match self.send_json(self.client.put(&url).json(&payload)).await {
-            Ok(r) => r,
-            Err(e) => return Ok(e),
-        };
-        TaskServer::success(&UpdateRepoScriptResponse {
-            success: true,
-            repo_id: repo_id.to_string(),
-            field: "cleanup_script".to_string(),
-        })
-    }
-
-    #[tool(
-        description = "Update a repository's dev server script. The dev server script starts the development server for the repository."
-    )]
-    async fn update_dev_server_script(
-        &self,
-        Parameters(UpdateDevServerScriptRequest { repo_id, script }): Parameters<
-            UpdateDevServerScriptRequest,
-        >,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/repos/{}", repo_id));
-        let script_value = if script.is_empty() {
-            None
-        } else {
-            Some(script)
-        };
-        let payload = serde_json::json!({
-            "dev_server_script": script_value
-        });
-        let _repo: Repo = match self.send_json(self.client.put(&url).json(&payload)).await {
-            Ok(r) => r,
-            Err(e) => return Ok(e),
-        };
-        TaskServer::success(&UpdateRepoScriptResponse {
-            success: true,
-            repo_id: repo_id.to_string(),
-            field: "dev_server_script".to_string(),
-        })
-    }
-
     #[tool(
         description = "List all the issues in a project. `project_id` is optional if running inside a workspace linked to a remote project."
     )]
@@ -1061,140 +842,6 @@ impl TaskServer {
             count: summaries.len(),
             issues: summaries,
             project_id: project_id.to_string(),
-        })
-    }
-
-    #[tool(
-        description = "Start a new workspace session. A local task is auto-created under the first available project."
-    )]
-    async fn start_workspace_session(
-        &self,
-        Parameters(StartWorkspaceSessionRequest {
-            title,
-            executor,
-            variant,
-            repos,
-            issue_id,
-        }): Parameters<StartWorkspaceSessionRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        if repos.is_empty() {
-            return Self::err("At least one repository must be specified.", None::<&str>);
-        }
-
-        let executor_trimmed = executor.trim();
-        if executor_trimmed.is_empty() {
-            return Self::err("Executor must not be empty.", None::<&str>);
-        }
-
-        let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
-        let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
-            Ok(exec) => exec,
-            Err(_) => {
-                return Self::err(
-                    format!("Unknown executor '{executor_trimmed}'."),
-                    None::<String>,
-                );
-            }
-        };
-
-        let variant = variant.and_then(|v| {
-            let trimmed = v.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
-
-        let executor_profile_id = ExecutorProfileId {
-            executor: base_executor,
-            variant,
-        };
-
-        // Derive project_id from first available project
-        let projects: Vec<Project> = match self
-            .send_json(self.client.get(self.url("/api/projects")))
-            .await
-        {
-            Ok(projects) => projects,
-            Err(e) => return Ok(e),
-        };
-        let project = match projects.first() {
-            Some(p) => p,
-            None => {
-                return Self::err("No projects found. Create a project first.", None::<&str>);
-            }
-        };
-
-        let workspace_repos: Vec<WorkspaceRepoInput> = repos
-            .into_iter()
-            .map(|r| WorkspaceRepoInput {
-                repo_id: r.repo_id,
-                target_branch: r.base_branch,
-            })
-            .collect();
-
-        let payload = CreateAndStartTaskRequest {
-            task: CreateTask::from_title_description(project.id, title, None),
-            executor_profile_id,
-            repos: workspace_repos,
-            linked_issue: None,
-        };
-
-        // create-and-start returns the task; we need to fetch the workspace it created
-        let url = self.url("/api/tasks/create-and-start");
-        let task: TaskWithAttemptStatus =
-            match self.send_json(self.client.post(&url).json(&payload)).await {
-                Ok(task) => task,
-                Err(e) => return Ok(e),
-            };
-
-        // Fetch workspaces for this task to get the workspace ID
-        let url = self.url(&format!("/api/task-attempts?task_id={}", task.task.id));
-        let workspaces: Vec<Workspace> = match self.send_json(self.client.get(&url)).await {
-            Ok(workspaces) => workspaces,
-            Err(e) => return Ok(e),
-        };
-
-        let workspace = match workspaces.first() {
-            Some(w) => w,
-            None => {
-                return Self::err("Workspace was not created.", None::<&str>);
-            }
-        };
-
-        // Link workspace to remote issue if issue_id is provided
-        if let Some(issue_id) = issue_id
-            && let Err(e) = self.link_workspace_to_issue(workspace.id, issue_id).await
-        {
-            return Ok(e);
-        }
-
-        let response = StartWorkspaceSessionResponse {
-            workspace_id: workspace.id.to_string(),
-        };
-
-        TaskServer::success(&response)
-    }
-
-    #[tool(
-        description = "Link an existing workspace to a remote issue. This associates the workspace with the issue for tracking."
-    )]
-    async fn link_workspace(
-        &self,
-        Parameters(McpLinkWorkspaceRequest {
-            workspace_id,
-            issue_id,
-        }): Parameters<McpLinkWorkspaceRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        if let Err(e) = self.link_workspace_to_issue(workspace_id, issue_id).await {
-            return Ok(e);
-        }
-
-        TaskServer::success(&McpLinkWorkspaceResponse {
-            success: true,
-            workspace_id: workspace_id.to_string(),
-            issue_id: issue_id.to_string(),
         })
     }
 
@@ -1292,12 +939,236 @@ impl TaskServer {
         let details = self.issue_to_details(&issue).await;
         TaskServer::success(&McpGetIssueResponse { issue: details })
     }
+
+    #[tool(
+        description = "Search for existing issues by title. Use this before creating a new issue to check for duplicates. Returns issues whose titles contain the search query (case-insensitive)."
+    )]
+    async fn search_issues(
+        &self,
+        Parameters(McpSearchIssuesRequest {
+            project_id,
+            query,
+            limit,
+        }): Parameters<McpSearchIssuesRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project_id = match self.resolve_project_id(project_id) {
+            Ok(id) => id,
+            Err(e) => return Ok(e),
+        };
+
+        let url = self.url(&format!("/api/remote/issues?project_id={}", project_id));
+        let response: ListIssuesResponse = match self.send_json(self.client.get(&url)).await {
+            Ok(r) => r,
+            Err(e) => return Ok(e),
+        };
+
+        let query_lower = query.to_lowercase();
+        let result_limit = limit.unwrap_or(10).max(0) as usize;
+
+        let status_names_by_id =
+            self.fetch_project_statuses(project_id)
+                .await
+                .ok()
+                .map(|statuses| {
+                    statuses
+                        .into_iter()
+                        .map(|status| (status.id, status.name))
+                        .collect::<std::collections::HashMap<_, _>>()
+                });
+
+        let matched: Vec<IssueSummary> = response
+            .issues
+            .iter()
+            .filter(|issue| issue.title.to_lowercase().contains(&query_lower))
+            .take(result_limit)
+            .map(|issue| self.issue_to_summary(issue, status_names_by_id.as_ref()))
+            .collect();
+
+        TaskServer::success(&McpSearchIssuesResponse {
+            count: matched.len(),
+            issues: matched,
+            project_id: project_id.to_string(),
+            query,
+        })
+    }
+
+    #[tool(
+        description = "Add a comment to an existing issue. Use this to append additional context, stack traces, or findings to an issue instead of creating a duplicate."
+    )]
+    async fn add_comment(
+        &self,
+        Parameters(McpAddCommentRequest { issue_id, message }): Parameters<McpAddCommentRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let expanded_message = self.expand_tags(&message).await;
+
+        let payload = serde_json::json!({
+            "issue_id": issue_id,
+            "message": expanded_message,
+        });
+
+        let url = self.url("/api/remote/issue_comments");
+        let response: MutationResponse<IssueComment> =
+            match self.send_json(self.client.post(&url).json(&payload)).await {
+                Ok(r) => r,
+                Err(e) => return Ok(e),
+            };
+
+        TaskServer::success(&McpAddCommentResponse {
+            comment_id: response.data.id.to_string(),
+            issue_id: issue_id.to_string(),
+        })
+    }
+
+    #[tool(
+        description = "Create a new issue with structured context. Provide file paths, error output, git refs, etc. as separate fields — they'll be formatted into a readable description and stored as structured metadata for the planning agent."
+    )]
+    async fn create_issue_with_context(
+        &self,
+        Parameters(McpCreateIssueWithContextRequest {
+            project_id,
+            title,
+            summary,
+            repo_name,
+            file_path,
+            line_number,
+            git_ref,
+            error_output,
+            command,
+        }): Parameters<McpCreateIssueWithContextRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project_id = match self.resolve_project_id(project_id) {
+            Ok(id) => id,
+            Err(e) => return Ok(e),
+        };
+
+        let status_id = match self.default_status_id(project_id).await {
+            Ok(id) => id,
+            Err(e) => return Ok(e),
+        };
+
+        // Build markdown description
+        let mut desc = String::new();
+        if let Some(ref s) = summary {
+            desc.push_str(s);
+            desc.push_str("\n\n");
+        }
+
+        let mut context_lines = Vec::new();
+        if let Some(ref r) = repo_name {
+            context_lines.push(format!("- **Repository**: {}", r));
+        }
+        if let Some(ref f) = file_path {
+            if let Some(ln) = line_number {
+                context_lines.push(format!("- **File**: {}:{}", f, ln));
+            } else {
+                context_lines.push(format!("- **File**: {}", f));
+            }
+        }
+        if let Some(ref g) = git_ref {
+            context_lines.push(format!("- **Git ref**: {}", g));
+        }
+        if let Some(ref c) = command {
+            context_lines.push(format!("- **Command**: `{}`", c));
+        }
+        if !context_lines.is_empty() {
+            desc.push_str("## Context\n");
+            desc.push_str(&context_lines.join("\n"));
+            desc.push_str("\n\n");
+        }
+
+        if let Some(ref e) = error_output {
+            desc.push_str("## Error Output\n```\n");
+            desc.push_str(e);
+            desc.push_str("\n```\n");
+        }
+
+        let expanded_description = if desc.is_empty() {
+            None
+        } else {
+            Some(self.expand_tags(&desc).await)
+        };
+
+        // Build extension_metadata with agent context
+        let mut agent_context = serde_json::Map::new();
+        if let Some(r) = repo_name {
+            agent_context.insert("repo_name".into(), serde_json::json!(r));
+        }
+        if let Some(f) = file_path {
+            agent_context.insert("file_path".into(), serde_json::json!(f));
+        }
+        if let Some(ln) = line_number {
+            agent_context.insert("line_number".into(), serde_json::json!(ln));
+        }
+        if let Some(g) = git_ref {
+            agent_context.insert("git_ref".into(), serde_json::json!(g));
+        }
+        if let Some(e) = error_output {
+            agent_context.insert("error_output".into(), serde_json::json!(e));
+        }
+        if let Some(c) = command {
+            agent_context.insert("command".into(), serde_json::json!(c));
+        }
+
+        let extension_metadata = serde_json::json!({ "agent_context": agent_context });
+
+        let payload = api_types::CreateIssueRequest {
+            id: None,
+            project_id,
+            status_id,
+            title,
+            description: expanded_description,
+            priority: None,
+            start_date: None,
+            target_date: None,
+            completed_at: None,
+            sort_order: 0.0,
+            parent_issue_id: None,
+            parent_issue_sort_order: None,
+            extension_metadata,
+        };
+
+        let url = self.url("/api/remote/issues");
+        let response: MutationResponse<Issue> =
+            match self.send_json(self.client.post(&url).json(&payload)).await {
+                Ok(r) => r,
+                Err(e) => return Ok(e),
+            };
+
+        TaskServer::success(&McpCreateIssueWithContextResponse {
+            issue_id: response.data.id.to_string(),
+        })
+    }
+
+    #[tool(
+        description = "Check if the Wickeban server is running and reachable. Call this before creating issues to ensure the server is available."
+    )]
+    async fn ping(&self) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/health");
+        match self.client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => TaskServer::success(&McpPingResponse {
+                status: "ok".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            }),
+            Ok(resp) => Self::err(
+                format!(
+                    "Wickeban server returned status {} at {}",
+                    resp.status(),
+                    self.base_url
+                ),
+                None::<String>,
+            ),
+            Err(e) => Self::err(
+                format!("Wickeban server is not reachable at {}", self.base_url),
+                Some(e.to_string()),
+            ),
+        }
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or issues then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list projects`. Call `list_issues` to fetch the `issue_ids` of all the issues in a project. TOOLS: 'list_organizations', 'list_projects', 'list_issues', 'create_issue', 'start_workspace_session', 'get_issue', 'update_issue', 'delete_issue', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Make sure to pass `project_id`, `issue_id`, or `repo_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or issues then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_issues` to fetch the `issue_ids` of all the issues in a project. TOOLS: 'ping', 'list_organizations', 'list_projects', 'list_issues', 'search_issues', 'create_issue', 'create_issue_with_context', 'get_issue', 'update_issue', 'delete_issue', 'add_comment'. Before creating an issue, use 'search_issues' to check for duplicates. Use 'add_comment' to append context to existing issues. Use 'create_issue_with_context' to provide structured metadata (file paths, error output, git refs). Use 'ping' to verify the server is running. Make sure to pass `project_id` or `issue_id` where required.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/issue/workspace metadata for the active Wickeban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);
