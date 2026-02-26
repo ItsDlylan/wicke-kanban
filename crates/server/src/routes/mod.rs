@@ -28,6 +28,7 @@ pub mod tags;
 pub mod task_attempts;
 pub mod tasks;
 pub mod terminal;
+pub mod usage;
 
 pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
     // Create routers with different middleware layers
@@ -51,6 +52,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(swarms::router(&deployment))
         .merge(planning_sessions::router())
         .merge(terminal::router())
+        .merge(usage::router())
         .nest("/images", images::routes())
         .layer(ValidateRequestHeaderLayer::custom(
             middleware::validate_origin,

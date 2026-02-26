@@ -50,7 +50,7 @@ export type TaskRelationships = { parent_task: Task | null, current_workspace: W
 
 export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, task_type: TaskType | null, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, sort_order: number | null, plan_status: string | null, is_human: boolean | null, };
 
-export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, parent_task_id: string | null, image_ids: Array<string> | null, };
 
 export type SpecSheet = { id: string, task_id: string, overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, created_at: string, updated_at: string, };
 
@@ -674,6 +674,8 @@ export type SpecAssessment = { complexity_score: number, files_estimated: number
 export type SwarmWithAgents = { agents: Array<SwarmAgent>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
 
 export type SwarmOverview = { agents: Array<SwarmAgent>, successions: Array<SwarmSuccession>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type ClaudeUsageData = { configured: boolean, usage: JsonValue | null, last_updated_at: string | null, error: string | null, };
 
 export const DEFAULT_PR_DESCRIPTION_PROMPT = "Update the PR that was just created with a better title and description.\nThe PR number is #{pr_number} and the URL is {pr_url}.\n\nAnalyze the changes in this branch and write:\n1. A concise, descriptive title that summarizes the changes, postfixed with \"(Wickeban)\"\n2. A detailed description that explains:\n   - What changes were made\n   - Why they were made (based on the task context)\n   - Any important implementation details\n\nUse the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps).";
 

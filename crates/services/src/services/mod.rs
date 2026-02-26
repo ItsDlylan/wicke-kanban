@@ -27,5 +27,6 @@ pub mod repo;
 pub mod spec_assessor;
 pub mod spec_generator;
 pub mod swarm_coordinator;
+pub mod usage_poller;
 pub mod workspace_manager;
 pub mod worktree_manager;

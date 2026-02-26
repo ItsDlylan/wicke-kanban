@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -253,37 +253,50 @@ export function ProjectTasks() {
   // Task panel onboarding showcase
   const taskShowcaseId = showcases.taskPanel.id;
   const taskShowcaseSeen = isLoaded && seenFeatures.includes(taskShowcaseId);
+  const taskShowcaseShown = useRef(false);
+
+  const markSeenRef = useRef(markSeen);
+  markSeenRef.current = markSeen;
 
   useEffect(() => {
-    if (!isLoaded || !isPanelOpen || taskShowcaseSeen) return;
+    if (
+      !isLoaded ||
+      !isPanelOpen ||
+      taskShowcaseSeen ||
+      taskShowcaseShown.current
+    )
+      return;
+    taskShowcaseShown.current = true;
 
     FeatureShowcaseDialog.show({ config: showcases.taskPanel }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeen(taskShowcaseId);
+      markSeenRef.current(taskShowcaseId);
     });
-  }, [isLoaded, isPanelOpen, taskShowcaseSeen, taskShowcaseId, markSeen]);
+  }, [isLoaded, isPanelOpen, taskShowcaseSeen, taskShowcaseId]);
 
   // Planning board onboarding showcase
   const planningShowcaseId = showcases.planningBoard.id;
   const planningShowcaseSeen =
     isLoaded && seenFeatures.includes(planningShowcaseId);
+  const planningShowcaseShown = useRef(false);
 
   useEffect(() => {
-    if (!isLoaded || !isPlanningBoard || planningShowcaseSeen) return;
+    if (
+      !isLoaded ||
+      !isPlanningBoard ||
+      planningShowcaseSeen ||
+      planningShowcaseShown.current
+    )
+      return;
+    planningShowcaseShown.current = true;
 
     FeatureShowcaseDialog.show({
       config: showcases.planningBoard,
     }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeen(planningShowcaseId);
+      markSeenRef.current(planningShowcaseId);
     });
-  }, [
-    isLoaded,
-    isPlanningBoard,
-    planningShowcaseSeen,
-    planningShowcaseId,
-    markSeen,
-  ]);
+  }, [isLoaded, isPlanningBoard, planningShowcaseSeen, planningShowcaseId]);
 
   const replayShowcase = useCallback(() => {
     const config = isPlanningBoard

@@ -174,7 +174,7 @@ pub fn parse_decomposition_output(output: &str) -> Result<DecompositionResult, D
 /// Shell out to `claude --print -p <prompt>` to get decomposition output.
 pub fn run_decomposition(prompt: &str, working_dir: &Path) -> Result<String, DecomposerError> {
     let output = std::process::Command::new("claude")
-        .args(["--print", "-p", prompt])
+        .args(["--print", "--permission-mode=plan", "-p", prompt])
         .current_dir(working_dir)
         .output()
         .map_err(|e| DecomposerError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;

@@ -29,6 +29,7 @@ use services::services::{
     project::ProjectService,
     queued_message::QueuedMessageService,
     repo::RepoService,
+    usage_poller::ClaudeUsageData,
     worktree_manager::WorktreeError,
 };
 use sqlx::Error as SqlxError;
@@ -105,6 +106,8 @@ pub trait Deployment: Clone + Send + Sync + 'static {
     fn approvals(&self) -> &Approvals;
 
     fn queued_message_service(&self) -> &QueuedMessageService;
+
+    fn usage_data(&self) -> &Arc<RwLock<Option<ClaudeUsageData>>>;
 
     async fn update_sentry_scope(&self) -> Result<(), DeploymentError> {
         let user_id = self.user_id();

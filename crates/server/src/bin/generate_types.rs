@@ -240,6 +240,7 @@ fn generate_types_content() -> String {
         services::services::spec_assessor::SpecAssessment::decl(),
         server::routes::swarms::SwarmWithAgents::decl(),
         server::routes::swarms::SwarmOverview::decl(),
+        services::services::usage_poller::ClaudeUsageData::decl(),
     ];
 
     let body = decls

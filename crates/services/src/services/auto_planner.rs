@@ -182,7 +182,7 @@ pub fn build_auto_plan_prompt(title: &str, description: Option<&str>) -> String 
 /// This is a blocking call — use `spawn_blocking` from async context.
 pub fn run_plan_generation(prompt: &str, working_dir: &Path) -> Result<String, AutoPlannerError> {
     let output = std::process::Command::new("claude")
-        .args(["--print", "-p", prompt])
+        .args(["--print", "--permission-mode=plan", "-p", prompt])
         .current_dir(working_dir)
         .output()
         .map_err(|e| AutoPlannerError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;

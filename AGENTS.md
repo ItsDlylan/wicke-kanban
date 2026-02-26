@@ -98,6 +98,47 @@ Use git worktrees to isolate development environments. Each worktree gets its ow
 - Rust: prefer unit tests alongside code (`#[cfg(test)]`), run `cargo test --workspace`. Add tests for new logic and edge cases.
 - Frontend: ensure `pnpm run check` and `pnpm run lint` pass. If adding runtime logic, include lightweight tests (e.g., Vitest) in the same directory.
 
+## Git Commits
+- Do NOT add "Co-Authored-By" lines or any AI attribution to commit messages
+- Do NOT add "Generated with Claude Code" or similar AI footers
+- Keep commit messages clean and professional
+
+## Browser Automation (agent-browser)
+
+Use `agent-browser` via Bash for browser verification of frontend changes. It supports **multiple isolated sessions**, making it safe for parallel agent work. Do NOT use Playwright MCP — it only supports one browser at a time which conflicts with multiple agents.
+
+**Always use `--headed --session <name>`** so the user can watch and sessions don't conflict.
+
+```bash
+# Open a page
+agent-browser --headed --session wicke open http://localhost:3000
+
+# Core workflow: snapshot → get refs → interact → re-snapshot
+agent-browser --headed --session wicke snapshot -i          # Get interactive elements with refs
+agent-browser --headed --session wicke click @e1            # Click element by ref
+agent-browser --headed --session wicke fill @e2 "search"    # Fill input by ref
+agent-browser --headed --session wicke screenshot page.png  # Take screenshot
+agent-browser --headed --session wicke close                # Close when done
+```
+
+**Key commands:**
+- `open <url>` — Navigate to page
+- `snapshot -i` — Get interactive elements with refs like `@e1`, `@e2`
+- `click @e1` — Click element by ref
+- `fill @e1 "text"` — Fill input field
+- `screenshot [path]` — Take screenshot
+- `get text @e1` — Extract element text
+- `wait --text "Success"` — Wait for text to appear
+- `close` — Close the browser session
+
+**Rules:**
+1. Use a unique session name per agent task (e.g., `--session card-test`, `--session verify-ui`)
+2. Snapshot before interacting — refs change after navigation
+3. Re-snapshot after page changes
+4. **Always close sessions when done** — orphaned sessions waste resources
+
+**Token-efficient pattern for teams:** Spawn a single agent to handle browser automation rather than doing it inline. Keep browser interaction out of the main context.
+
 ## Security & Config Tips
-- Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST` 
+- Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST`
 - Dev ports and assets are managed by `scripts/setup-dev-environment.js`.

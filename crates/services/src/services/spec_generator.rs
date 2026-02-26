@@ -68,7 +68,7 @@ pub fn build_spec_generation_prompt(
 /// This is a blocking call — use `spawn_blocking` from async context.
 pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, SpecGeneratorError> {
     let output = std::process::Command::new("claude")
-        .args(["--print", "-p", prompt])
+        .args(["--print", "--permission-mode=plan", "-p", prompt])
         .current_dir(working_dir)
         .output()
         .map_err(|e| SpecGeneratorError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;
