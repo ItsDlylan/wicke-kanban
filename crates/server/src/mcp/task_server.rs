@@ -1,8 +1,11 @@
-use api_types::{
-    Issue, IssueComment, ListIssuesResponse, ListOrganizationsResponse,
-    ListProjectStatusesResponse, MutationResponse, ProjectStatus,
+use std::str::FromStr;
+
+use db::models::{
+    project::Project,
+    tag::Tag,
+    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus},
+    workspace::WorkspaceContext,
 };
-use db::models::{tag::Tag, workspace::WorkspaceContext};
 use regex::Regex;
 use rmcp::{
     ErrorData, ServerHandler,
@@ -20,21 +23,41 @@ use crate::routes::containers::ContainerQuery;
 
 // ── MCP request/response types ──────────────────────────────────────────────
 
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TaskSummary {
+    #[schemars(description = "The unique identifier of the task")]
+    pub id: String,
+    #[schemars(description = "The title of the task")]
+    pub title: String,
+    #[schemars(description = "Current status of the task")]
+    pub status: String,
+    #[schemars(description = "Optional description of the task")]
+    pub description: Option<String>,
+    #[schemars(description = "When the task was created")]
+    pub created_at: String,
+    #[schemars(description = "When the task was last updated")]
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpCreateIssueRequest {
+pub struct McpCreateTaskRequest {
     #[schemars(
-        description = "The ID of the project to create the issue in. Optional if running inside a workspace linked to a remote project."
+        description = "The ID of the project to create the task in. Optional if running inside a workspace linked to a project."
     )]
     pub project_id: Option<Uuid>,
-    #[schemars(description = "The title of the issue")]
+    #[schemars(description = "The title of the task")]
     pub title: String,
-    #[schemars(description = "Optional description of the issue")]
+    #[schemars(description = "Optional description of the task")]
     pub description: Option<String>,
+    #[schemars(
+        description = "Optional status for the task. Valid values: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled. Defaults to backlog."
+    )]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpCreateIssueResponse {
-    pub issue_id: String,
+pub struct McpCreateTaskResponse {
+    pub task_id: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -50,7 +73,7 @@ pub struct ProjectSummary {
 }
 
 impl ProjectSummary {
-    fn from_remote_project(project: api_types::Project) -> Self {
+    fn from_project(project: Project) -> Self {
         Self {
             id: project.id.to_string(),
             name: project.name,
@@ -60,171 +83,115 @@ impl ProjectSummary {
     }
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpListProjectsRequest {
-    #[schemars(description = "The ID of the organization to list projects from")]
-    pub organization_id: Uuid,
-}
-
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct McpListProjectsResponse {
     pub projects: Vec<ProjectSummary>,
     pub count: usize,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct OrganizationSummary {
-    #[schemars(description = "The unique identifier of the organization")]
-    pub id: String,
-    #[schemars(description = "The name of the organization")]
-    pub name: String,
-    #[schemars(description = "The slug of the organization")]
-    pub slug: String,
-    #[schemars(description = "Whether this is a personal organization")]
-    pub is_personal: bool,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpListOrganizationsResponse {
-    pub organizations: Vec<OrganizationSummary>,
-    pub count: usize,
-}
-
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpListIssuesRequest {
+pub struct McpListTasksRequest {
     #[schemars(
-        description = "The ID of the project to list issues from. Optional if running inside a workspace linked to a remote project."
+        description = "The ID of the project to list tasks from. Optional if running inside a workspace linked to a project."
     )]
     pub project_id: Option<Uuid>,
-    #[schemars(description = "Maximum number of issues to return (default: 50)")]
+    #[schemars(description = "Maximum number of tasks to return (default: 50)")]
     pub limit: Option<i32>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct IssueSummary {
-    #[schemars(description = "The unique identifier of the issue")]
-    pub id: String,
-    #[schemars(description = "The title of the issue")]
-    pub title: String,
-    #[schemars(description = "Current status of the issue")]
-    pub status: String,
-    #[schemars(description = "When the issue was created")]
-    pub created_at: String,
-    #[schemars(description = "When the issue was last updated")]
-    pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct IssueDetails {
-    #[schemars(description = "The unique identifier of the issue")]
-    pub id: String,
-    #[schemars(description = "The title of the issue")]
-    pub title: String,
-    #[schemars(description = "Optional description of the issue")]
-    pub description: Option<String>,
-    #[schemars(description = "Current status of the issue")]
-    pub status: String,
-    #[schemars(description = "The status ID (UUID)")]
-    pub status_id: String,
-    #[schemars(description = "When the issue was created")]
-    pub created_at: String,
-    #[schemars(description = "When the issue was last updated")]
-    pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpListIssuesResponse {
-    pub issues: Vec<IssueSummary>,
+pub struct McpListTasksResponse {
+    pub tasks: Vec<TaskSummary>,
     pub count: usize,
     pub project_id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpUpdateIssueRequest {
-    #[schemars(description = "The ID of the issue to update")]
-    pub issue_id: Uuid,
-    #[schemars(description = "New title for the issue")]
+pub struct McpGetTaskRequest {
+    #[schemars(description = "The ID of the task to retrieve")]
+    pub task_id: Uuid,
+    #[schemars(
+        description = "The ID of the project the task belongs to. Optional if running inside a workspace linked to a project."
+    )]
+    pub project_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct McpGetTaskResponse {
+    pub task: TaskSummary,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpUpdateTaskRequest {
+    #[schemars(description = "The ID of the task to update")]
+    pub task_id: Uuid,
+    #[schemars(
+        description = "The ID of the project the task belongs to. Optional if running inside a workspace linked to a project."
+    )]
+    pub project_id: Option<Uuid>,
+    #[schemars(description = "New title for the task")]
     pub title: Option<String>,
-    #[schemars(description = "New description for the issue")]
+    #[schemars(description = "New description for the task")]
     pub description: Option<String>,
-    #[schemars(description = "New status name for the issue (must match a project status name)")]
+    #[schemars(
+        description = "New status for the task. Valid values: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled."
+    )]
     pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpUpdateIssueResponse {
-    pub issue: IssueDetails,
+pub struct McpUpdateTaskResponse {
+    pub task: TaskSummary,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpDeleteIssueRequest {
-    #[schemars(description = "The ID of the issue to delete")]
-    pub issue_id: Uuid,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpDeleteIssueResponse {
-    pub deleted_issue_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpGetIssueRequest {
-    #[schemars(description = "The ID of the issue to retrieve")]
-    pub issue_id: Uuid,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpGetIssueResponse {
-    pub issue: IssueDetails,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpSearchIssuesRequest {
+pub struct McpDeleteTaskRequest {
+    #[schemars(description = "The ID of the task to delete")]
+    pub task_id: Uuid,
     #[schemars(
-        description = "The ID of the project to search issues in. Optional if running inside a workspace linked to a remote project."
+        description = "The ID of the project the task belongs to. Optional if running inside a workspace linked to a project."
     )]
     pub project_id: Option<Uuid>,
-    #[schemars(description = "Search query to match against issue titles")]
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct McpDeleteTaskResponse {
+    pub deleted_task_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpSearchTasksRequest {
+    #[schemars(
+        description = "The ID of the project to search tasks in. Optional if running inside a workspace linked to a project."
+    )]
+    pub project_id: Option<Uuid>,
+    #[schemars(description = "Search query to match against task titles")]
     pub query: String,
     #[schemars(description = "Max results (default 10)")]
     pub limit: Option<i32>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpSearchIssuesResponse {
-    pub issues: Vec<IssueSummary>,
+pub struct McpSearchTasksResponse {
+    pub tasks: Vec<TaskSummary>,
     pub count: usize,
     pub project_id: String,
     pub query: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpAddCommentRequest {
-    #[schemars(description = "The ID of the issue to comment on")]
-    pub issue_id: Uuid,
-    #[schemars(description = "The comment message (supports markdown)")]
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpAddCommentResponse {
-    pub comment_id: String,
-    pub issue_id: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct McpCreateIssueWithContextRequest {
+pub struct McpCreateTaskWithContextRequest {
     #[schemars(
-        description = "The ID of the project to create the issue in. Optional if running inside a workspace linked to a remote project."
+        description = "The ID of the project to create the task in. Optional if running inside a workspace linked to a project."
     )]
     pub project_id: Option<Uuid>,
-    #[schemars(description = "Issue title")]
+    #[schemars(description = "Task title")]
     pub title: String,
-    #[schemars(description = "High-level summary of the issue")]
+    #[schemars(description = "High-level summary of the task")]
     pub summary: Option<String>,
     #[schemars(description = "Repository name where the issue was found")]
     pub repo_name: Option<String>,
-    #[schemars(description = "File path relevant to the issue")]
+    #[schemars(description = "File path relevant to the task")]
     pub file_path: Option<String>,
     #[schemars(description = "Line number in the file")]
     pub line_number: Option<u32>,
@@ -237,8 +204,8 @@ pub struct McpCreateIssueWithContextRequest {
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct McpCreateIssueWithContextResponse {
-    pub issue_id: String,
+pub struct McpCreateTaskWithContextResponse {
+    pub task_id: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -269,12 +236,8 @@ pub struct McpRepoContext {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct McpContext {
-    #[schemars(description = "The organization ID (if workspace is linked to remote)")]
-    pub organization_id: Option<Uuid>,
-    #[schemars(description = "The remote project ID (if workspace is linked to remote)")]
+    #[schemars(description = "The project ID (if workspace is linked to a project)")]
     pub project_id: Option<Uuid>,
-    #[schemars(description = "The remote issue ID (if workspace is linked to a remote issue)")]
-    pub issue_id: Option<Uuid>,
     pub workspace_id: Uuid,
     pub workspace_branch: String,
     #[schemars(
@@ -349,77 +312,14 @@ impl TaskServer {
 
         let workspace_id = ctx.workspace.id;
         let workspace_branch = ctx.workspace.branch.clone();
-
-        // Look up remote workspace to get remote project_id, issue_id, and organization_id
-        let (project_id, issue_id, organization_id) = self
-            .fetch_remote_workspace_context(workspace_id)
-            .await
-            .unwrap_or((None, None, None));
+        let project_id = Some(ctx.project.id);
 
         Some(McpContext {
-            organization_id,
             project_id,
-            issue_id,
             workspace_id,
             workspace_branch,
             workspace_repos,
         })
-    }
-
-    async fn fetch_remote_workspace_context(
-        &self,
-        local_workspace_id: Uuid,
-    ) -> Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> {
-        let url = self.url(&format!(
-            "/api/remote/workspaces/by-local-id/{}",
-            local_workspace_id
-        ));
-
-        let response = tokio::time::timeout(
-            std::time::Duration::from_millis(2000),
-            self.client.get(&url).send(),
-        )
-        .await
-        .ok()?
-        .ok()?;
-
-        if !response.status().is_success() {
-            return None;
-        }
-
-        let api_response: ApiResponseEnvelope<api_types::Workspace> = response.json().await.ok()?;
-
-        if !api_response.success {
-            return None;
-        }
-
-        let remote_ws = api_response.data?;
-        let project_id = remote_ws.project_id;
-
-        // Fetch the project to get organization_id
-        let org_id = self.fetch_remote_organization_id(project_id).await;
-
-        Some((Some(project_id), remote_ws.issue_id, org_id))
-    }
-
-    async fn fetch_remote_organization_id(&self, project_id: Uuid) -> Option<Uuid> {
-        let url = self.url(&format!("/api/remote/projects/{}", project_id));
-
-        let response = tokio::time::timeout(
-            std::time::Duration::from_millis(2000),
-            self.client.get(&url).send(),
-        )
-        .await
-        .ok()?
-        .ok()?;
-
-        if !response.status().is_success() {
-            return None;
-        }
-
-        let api_response: ApiResponseEnvelope<api_types::Project> = response.json().await.ok()?;
-        let project = api_response.data?;
-        Some(project.organization_id)
     }
 }
 
@@ -471,9 +371,23 @@ impl TaskServer {
             );
         }
 
-        let api_response = resp.json::<ApiResponseEnvelope<T>>().await.map_err(|e| {
-            Self::err("Failed to parse VK API response", Some(&e.to_string())).unwrap()
+        let body = resp.text().await.map_err(|e| {
+            Self::err("Failed to read VK API response body", Some(&e.to_string())).unwrap()
         })?;
+
+        let api_response: ApiResponseEnvelope<T> =
+            serde_json::from_str(&body).map_err(|e| {
+                let preview = if body.len() > 500 {
+                    format!("{}...", &body[..500])
+                } else {
+                    body.clone()
+                };
+                Self::err(
+                    format!("Failed to parse VK API response: {}", e),
+                    Some(preview),
+                )
+                .unwrap()
+            })?;
 
         if !api_response.success {
             let msg = api_response.message.as_deref().unwrap_or("Unknown error");
@@ -586,100 +500,30 @@ impl TaskServer {
         .unwrap())
     }
 
-    /// Fetches project statuses for a project, returning a map of status name → status.
-    async fn fetch_project_statuses(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Vec<ProjectStatus>, CallToolResult> {
-        let url = self.url(&format!(
-            "/api/remote/project-statuses?project_id={}",
-            project_id
-        ));
-        let response: ListProjectStatusesResponse = self.send_json(self.client.get(&url)).await?;
-        Ok(response.project_statuses)
-    }
-
-    /// Resolves a status name to a status_id UUID using project statuses.
-    async fn resolve_status_id(
-        &self,
-        project_id: Uuid,
-        status_name: &str,
-    ) -> Result<Uuid, CallToolResult> {
-        let statuses = self.fetch_project_statuses(project_id).await?;
-        statuses
-            .iter()
-            .find(|s| s.name.eq_ignore_ascii_case(status_name))
-            .map(|s| s.id)
-            .ok_or_else(|| {
-                let available: Vec<&str> = statuses.iter().map(|s| s.name.as_str()).collect();
-                Self::err(
-                    format!(
-                        "Unknown status '{}'. Available statuses: {:?}",
-                        status_name, available
-                    ),
-                    None::<String>,
-                )
-                .unwrap()
-            })
-    }
-
-    /// Gets the default status_id for a project (first non-hidden status by sort_order).
-    async fn default_status_id(&self, project_id: Uuid) -> Result<Uuid, CallToolResult> {
-        let statuses = self.fetch_project_statuses(project_id).await?;
-        statuses
-            .iter()
-            .filter(|s| !s.hidden)
-            .min_by_key(|s| s.sort_order)
-            .map(|s| s.id)
-            .ok_or_else(|| {
-                Self::err("No visible statuses found for project", None::<&str>).unwrap()
-            })
-    }
-
-    /// Resolves a status_id to its display name. Falls back to UUID string if lookup fails.
-    async fn resolve_status_name(&self, project_id: Uuid, status_id: Uuid) -> String {
-        match self.fetch_project_statuses(project_id).await {
-            Ok(statuses) => statuses
-                .iter()
-                .find(|s| s.id == status_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| status_id.to_string()),
-            Err(_) => status_id.to_string(),
+    /// Converts a Task to TaskSummary.
+    fn task_to_summary(task: &Task) -> TaskSummary {
+        TaskSummary {
+            id: task.id.to_string(),
+            title: task.title.clone(),
+            status: task.status.to_string(),
+            description: task.description.clone(),
+            created_at: task.created_at.to_rfc3339(),
+            updated_at: task.updated_at.to_rfc3339(),
         }
     }
 
-    /// Converts an Issue to IssueSummary using a pre-fetched status map when available.
-    fn issue_to_summary(
-        &self,
-        issue: &Issue,
-        status_names_by_id: Option<&std::collections::HashMap<Uuid, String>>,
-    ) -> IssueSummary {
-        let status = status_names_by_id
-            .and_then(|status_map| status_map.get(&issue.status_id).cloned())
-            .unwrap_or_else(|| issue.status_id.to_string());
-        IssueSummary {
-            id: issue.id.to_string(),
-            title: issue.title.clone(),
-            status,
-            created_at: issue.created_at.to_rfc3339(),
-            updated_at: issue.updated_at.to_rfc3339(),
-        }
-    }
-
-    /// Converts an Issue to IssueDetails, resolving status_id to name.
-    async fn issue_to_details(&self, issue: &Issue) -> IssueDetails {
-        let status = self
-            .resolve_status_name(issue.project_id, issue.status_id)
-            .await;
-        IssueDetails {
-            id: issue.id.to_string(),
-            title: issue.title.clone(),
-            description: issue.description.clone(),
-            status,
-            status_id: issue.status_id.to_string(),
-            created_at: issue.created_at.to_rfc3339(),
-            updated_at: issue.updated_at.to_rfc3339(),
-        }
+    /// Parses a status string to TaskStatus, returning a helpful error listing valid values.
+    fn resolve_task_status(s: &str) -> Result<TaskStatus, CallToolResult> {
+        TaskStatus::from_str(s).map_err(|_| {
+            Self::err(
+                format!(
+                    "Unknown status '{}'. Valid statuses: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled",
+                    s
+                ),
+                None::<String>,
+            )
+            .unwrap()
+        })
     }
 }
 
@@ -688,7 +532,7 @@ impl TaskServer {
 #[tool_router]
 impl TaskServer {
     #[tool(
-        description = "Return project, issue, and workspace metadata for the current workspace session context."
+        description = "Return project and workspace metadata for the current workspace session context."
     )]
     async fn get_context(&self) -> Result<CallToolResult, ErrorData> {
         let context = self.context.as_ref().expect("VK context should exist");
@@ -696,15 +540,16 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new issue in a project. `project_id` is optional if running inside a workspace linked to a remote project."
+        description = "Create a new task in a project. `project_id` is optional if running inside a workspace linked to a project."
     )]
-    async fn create_issue(
+    async fn create_task(
         &self,
-        Parameters(McpCreateIssueRequest {
+        Parameters(McpCreateTaskRequest {
             project_id,
             title,
             description,
-        }): Parameters<McpCreateIssueRequest>,
+            status,
+        }): Parameters<McpCreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
             Ok(id) => id,
@@ -716,58 +561,51 @@ impl TaskServer {
             None => None,
         };
 
-        let status_id = match self.default_status_id(project_id).await {
-            Ok(id) => id,
+        let task_status = if let Some(ref s) = status {
+            match Self::resolve_task_status(s) {
+                Ok(ts) => Some(ts),
+                Err(e) => return Ok(e),
+            }
+        } else {
+            Some(TaskStatus::Backlog)
+        };
+
+        let payload = CreateTask {
+            project_id,
+            title,
+            description: expanded_description,
+            status: task_status,
+            task_type: None,
+            parent_workspace_id: None,
+            parent_task_id: None,
+            image_ids: None,
+            sort_order: None,
+            plan_status: None,
+            is_human: None,
+        };
+
+        let url = self.url("/api/tasks");
+        let task: Task = match self.send_json(self.client.post(&url).json(&payload)).await {
+            Ok(t) => t,
             Err(e) => return Ok(e),
         };
 
-        let payload = api_types::CreateIssueRequest {
-            id: None,
-            project_id,
-            status_id,
-            title,
-            description: expanded_description,
-            priority: None,
-            start_date: None,
-            target_date: None,
-            completed_at: None,
-            sort_order: 0.0,
-            parent_issue_id: None,
-            parent_issue_sort_order: None,
-            extension_metadata: serde_json::json!({}),
-        };
-
-        let url = self.url("/api/remote/issues");
-        let response: MutationResponse<Issue> =
-            match self.send_json(self.client.post(&url).json(&payload)).await {
-                Ok(r) => r,
-                Err(e) => return Ok(e),
-            };
-
-        TaskServer::success(&McpCreateIssueResponse {
-            issue_id: response.data.id.to_string(),
+        TaskServer::success(&McpCreateTaskResponse {
+            task_id: task.id.to_string(),
         })
     }
 
     #[tool(description = "List all the available projects")]
-    async fn list_projects(
-        &self,
-        Parameters(McpListProjectsRequest { organization_id }): Parameters<McpListProjectsRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!(
-            "/api/remote/projects?organization_id={}",
-            organization_id
-        ));
-        let response: api_types::ListProjectsResponse =
-            match self.send_json(self.client.get(&url)).await {
-                Ok(r) => r,
-                Err(e) => return Ok(e),
-            };
+    async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/api/projects");
+        let projects: Vec<Project> = match self.send_json(self.client.get(&url)).await {
+            Ok(r) => r,
+            Err(e) => return Ok(e),
+        };
 
-        let project_summaries: Vec<ProjectSummary> = response
-            .projects
+        let project_summaries: Vec<ProjectSummary> = projects
             .into_iter()
-            .map(ProjectSummary::from_remote_project)
+            .map(ProjectSummary::from_project)
             .collect();
 
         TaskServer::success(&McpListProjectsResponse {
@@ -776,101 +614,55 @@ impl TaskServer {
         })
     }
 
-    #[tool(description = "List all the available organizations")]
-    async fn list_organizations(&self) -> Result<CallToolResult, ErrorData> {
-        let url = self.url("/api/organizations");
-        let response: ListOrganizationsResponse = match self.send_json(self.client.get(&url)).await
-        {
-            Ok(r) => r,
-            Err(e) => return Ok(e),
-        };
-
-        let org_summaries: Vec<OrganizationSummary> = response
-            .organizations
-            .into_iter()
-            .map(|o| OrganizationSummary {
-                id: o.id.to_string(),
-                name: o.name,
-                slug: o.slug,
-                is_personal: o.is_personal,
-            })
-            .collect();
-
-        TaskServer::success(&McpListOrganizationsResponse {
-            count: org_summaries.len(),
-            organizations: org_summaries,
-        })
-    }
-
     #[tool(
-        description = "List all the issues in a project. `project_id` is optional if running inside a workspace linked to a remote project."
+        description = "List all the tasks in a project. `project_id` is optional if running inside a workspace linked to a project."
     )]
-    async fn list_issues(
+    async fn list_tasks(
         &self,
-        Parameters(McpListIssuesRequest { project_id, limit }): Parameters<McpListIssuesRequest>,
+        Parameters(McpListTasksRequest { project_id, limit }): Parameters<McpListTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
             Ok(id) => id,
             Err(e) => return Ok(e),
         };
 
-        let url = self.url(&format!("/api/remote/issues?project_id={}", project_id));
-        let response: ListIssuesResponse = match self.send_json(self.client.get(&url)).await {
+        let url = self.url(&format!("/api/tasks?project_id={}", project_id));
+        let tasks: Vec<TaskWithAttemptStatus> = match self.send_json(self.client.get(&url)).await {
             Ok(r) => r,
             Err(e) => return Ok(e),
         };
 
-        let issue_limit = limit.unwrap_or(50).max(0) as usize;
-        let limited: Vec<&Issue> = response.issues.iter().take(issue_limit).collect();
-        let status_names_by_id =
-            self.fetch_project_statuses(project_id)
-                .await
-                .ok()
-                .map(|statuses| {
-                    statuses
-                        .into_iter()
-                        .map(|status| (status.id, status.name))
-                        .collect::<std::collections::HashMap<_, _>>()
-                });
+        let task_limit = limit.unwrap_or(50).max(0) as usize;
+        let summaries: Vec<TaskSummary> = tasks
+            .iter()
+            .take(task_limit)
+            .map(|t| Self::task_to_summary(&t.task))
+            .collect();
 
-        let mut summaries = Vec::with_capacity(limited.len());
-        for issue in &limited {
-            summaries.push(self.issue_to_summary(issue, status_names_by_id.as_ref()));
-        }
-
-        TaskServer::success(&McpListIssuesResponse {
+        TaskServer::success(&McpListTasksResponse {
             count: summaries.len(),
-            issues: summaries,
+            tasks: summaries,
             project_id: project_id.to_string(),
         })
     }
 
     #[tool(
-        description = "Update an existing issue's title, description, or status. `issue_id` is required. `title`, `description`, and `status` are optional."
+        description = "Update an existing task's title, description, or status. `task_id` is required. `title`, `description`, and `status` are optional. Valid statuses: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled."
     )]
-    async fn update_issue(
+    async fn update_task(
         &self,
-        Parameters(McpUpdateIssueRequest {
-            issue_id,
+        Parameters(McpUpdateTaskRequest {
+            task_id,
+            project_id: _,
             title,
             description,
             status,
-        }): Parameters<McpUpdateIssueRequest>,
+        }): Parameters<McpUpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        // First get the issue to know its project_id for status resolution
-        let get_url = self.url(&format!("/api/remote/issues/{}", issue_id));
-        let existing_issue: Issue = match self.send_json(self.client.get(&get_url)).await {
-            Ok(i) => i,
-            Err(e) => return Ok(e),
-        };
-
-        // Resolve status name to status_id if provided
-        let status_id = if let Some(ref status_name) = status {
-            match self
-                .resolve_status_id(existing_issue.project_id, status_name)
-                .await
-            {
-                Ok(id) => Some(id),
+        // Resolve status name to TaskStatus if provided
+        let task_status = if let Some(ref status_name) = status {
+            match Self::resolve_task_status(status_name) {
+                Ok(ts) => Some(ts),
                 Err(e) => return Ok(e),
             }
         } else {
@@ -879,85 +671,84 @@ impl TaskServer {
 
         // Expand @tagname references in description
         let expanded_description = match description {
-            Some(desc) => Some(Some(self.expand_tags(&desc).await)),
+            Some(desc) => Some(self.expand_tags(&desc).await),
             None => None,
         };
 
-        let payload = api_types::UpdateIssueRequest {
-            status_id,
-            title,
-            description: expanded_description,
-            priority: None,
-            start_date: None,
-            target_date: None,
-            completed_at: None,
-            sort_order: None,
-            parent_issue_id: None,
-            parent_issue_sort_order: None,
-            extension_metadata: None,
+        let payload = serde_json::json!({
+            "title": title,
+            "description": expanded_description,
+            "status": task_status,
+        });
+
+        let url = self.url(&format!("/api/tasks/{}", task_id));
+        let task: Task = match self.send_json(self.client.put(&url).json(&payload)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
         };
 
-        let url = self.url(&format!("/api/remote/issues/{}", issue_id));
-        let response: MutationResponse<Issue> =
-            match self.send_json(self.client.patch(&url).json(&payload)).await {
-                Ok(r) => r,
-                Err(e) => return Ok(e),
-            };
-
-        let details = self.issue_to_details(&response.data).await;
-        TaskServer::success(&McpUpdateIssueResponse { issue: details })
+        TaskServer::success(&McpUpdateTaskResponse {
+            task: Self::task_to_summary(&task),
+        })
     }
 
-    #[tool(description = "Delete an issue. `issue_id` is required.")]
-    async fn delete_issue(
+    #[tool(description = "Delete a task. `task_id` is required.")]
+    async fn delete_task(
         &self,
-        Parameters(McpDeleteIssueRequest { issue_id }): Parameters<McpDeleteIssueRequest>,
+        Parameters(McpDeleteTaskRequest {
+            task_id,
+            project_id: _,
+        }): Parameters<McpDeleteTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/remote/issues/{}", issue_id));
+        let url = self.url(&format!("/api/tasks/{}", task_id));
         if let Err(e) = self.send_empty_json(self.client.delete(&url)).await {
             return Ok(e);
         }
 
-        TaskServer::success(&McpDeleteIssueResponse {
-            deleted_issue_id: Some(issue_id.to_string()),
+        TaskServer::success(&McpDeleteTaskResponse {
+            deleted_task_id: task_id.to_string(),
         })
     }
 
     #[tool(
-        description = "Get detailed information about a specific issue. You can use `list_issues` to find issue IDs. `issue_id` is required."
+        description = "Get detailed information about a specific task. You can use `list_tasks` to find task IDs. `task_id` is required."
     )]
-    async fn get_issue(
+    async fn get_task(
         &self,
-        Parameters(McpGetIssueRequest { issue_id }): Parameters<McpGetIssueRequest>,
+        Parameters(McpGetTaskRequest {
+            task_id,
+            project_id: _,
+        }): Parameters<McpGetTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/remote/issues/{}", issue_id));
-        let issue: Issue = match self.send_json(self.client.get(&url)).await {
-            Ok(i) => i,
+        let url = self.url(&format!("/api/tasks/{}", task_id));
+        let task: Task = match self.send_json(self.client.get(&url)).await {
+            Ok(t) => t,
             Err(e) => return Ok(e),
         };
 
-        let details = self.issue_to_details(&issue).await;
-        TaskServer::success(&McpGetIssueResponse { issue: details })
+        TaskServer::success(&McpGetTaskResponse {
+            task: Self::task_to_summary(&task),
+        })
     }
 
     #[tool(
-        description = "Search for existing issues by title. Use this before creating a new issue to check for duplicates. Returns issues whose titles contain the search query (case-insensitive)."
+        description = "Search for existing tasks by title. Use this before creating a new task to check for duplicates. Returns tasks whose titles contain the search query (case-insensitive)."
     )]
-    async fn search_issues(
+    async fn search_tasks(
         &self,
-        Parameters(McpSearchIssuesRequest {
+        Parameters(McpSearchTasksRequest {
             project_id,
             query,
             limit,
-        }): Parameters<McpSearchIssuesRequest>,
+        }): Parameters<McpSearchTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
             Ok(id) => id,
             Err(e) => return Ok(e),
         };
 
-        let url = self.url(&format!("/api/remote/issues?project_id={}", project_id));
-        let response: ListIssuesResponse = match self.send_json(self.client.get(&url)).await {
+        let url = self.url(&format!("/api/tasks?project_id={}", project_id));
+        let tasks: Vec<TaskWithAttemptStatus> = match self.send_json(self.client.get(&url)).await {
             Ok(r) => r,
             Err(e) => return Ok(e),
         };
@@ -965,66 +756,27 @@ impl TaskServer {
         let query_lower = query.to_lowercase();
         let result_limit = limit.unwrap_or(10).max(0) as usize;
 
-        let status_names_by_id =
-            self.fetch_project_statuses(project_id)
-                .await
-                .ok()
-                .map(|statuses| {
-                    statuses
-                        .into_iter()
-                        .map(|status| (status.id, status.name))
-                        .collect::<std::collections::HashMap<_, _>>()
-                });
-
-        let matched: Vec<IssueSummary> = response
-            .issues
+        let matched: Vec<TaskSummary> = tasks
             .iter()
-            .filter(|issue| issue.title.to_lowercase().contains(&query_lower))
+            .filter(|t| t.task.title.to_lowercase().contains(&query_lower))
             .take(result_limit)
-            .map(|issue| self.issue_to_summary(issue, status_names_by_id.as_ref()))
+            .map(|t| Self::task_to_summary(&t.task))
             .collect();
 
-        TaskServer::success(&McpSearchIssuesResponse {
+        TaskServer::success(&McpSearchTasksResponse {
             count: matched.len(),
-            issues: matched,
+            tasks: matched,
             project_id: project_id.to_string(),
             query,
         })
     }
 
     #[tool(
-        description = "Add a comment to an existing issue. Use this to append additional context, stack traces, or findings to an issue instead of creating a duplicate."
+        description = "Create a new task with structured context. Provide file paths, error output, git refs, etc. as separate fields — they'll be formatted into a readable description."
     )]
-    async fn add_comment(
+    async fn create_task_with_context(
         &self,
-        Parameters(McpAddCommentRequest { issue_id, message }): Parameters<McpAddCommentRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let expanded_message = self.expand_tags(&message).await;
-
-        let payload = serde_json::json!({
-            "issue_id": issue_id,
-            "message": expanded_message,
-        });
-
-        let url = self.url("/api/remote/issue_comments");
-        let response: MutationResponse<IssueComment> =
-            match self.send_json(self.client.post(&url).json(&payload)).await {
-                Ok(r) => r,
-                Err(e) => return Ok(e),
-            };
-
-        TaskServer::success(&McpAddCommentResponse {
-            comment_id: response.data.id.to_string(),
-            issue_id: issue_id.to_string(),
-        })
-    }
-
-    #[tool(
-        description = "Create a new issue with structured context. Provide file paths, error output, git refs, etc. as separate fields — they'll be formatted into a readable description and stored as structured metadata for the planning agent."
-    )]
-    async fn create_issue_with_context(
-        &self,
-        Parameters(McpCreateIssueWithContextRequest {
+        Parameters(McpCreateTaskWithContextRequest {
             project_id,
             title,
             summary,
@@ -1034,14 +786,9 @@ impl TaskServer {
             git_ref,
             error_output,
             command,
-        }): Parameters<McpCreateIssueWithContextRequest>,
+        }): Parameters<McpCreateTaskWithContextRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
-            Ok(id) => id,
-            Err(e) => return Ok(e),
-        };
-
-        let status_id = match self.default_status_id(project_id).await {
             Ok(id) => id,
             Err(e) => return Ok(e),
         };
@@ -1088,62 +835,36 @@ impl TaskServer {
             Some(self.expand_tags(&desc).await)
         };
 
-        // Build extension_metadata with agent context
-        let mut agent_context = serde_json::Map::new();
-        if let Some(r) = repo_name {
-            agent_context.insert("repo_name".into(), serde_json::json!(r));
-        }
-        if let Some(f) = file_path {
-            agent_context.insert("file_path".into(), serde_json::json!(f));
-        }
-        if let Some(ln) = line_number {
-            agent_context.insert("line_number".into(), serde_json::json!(ln));
-        }
-        if let Some(g) = git_ref {
-            agent_context.insert("git_ref".into(), serde_json::json!(g));
-        }
-        if let Some(e) = error_output {
-            agent_context.insert("error_output".into(), serde_json::json!(e));
-        }
-        if let Some(c) = command {
-            agent_context.insert("command".into(), serde_json::json!(c));
-        }
-
-        let extension_metadata = serde_json::json!({ "agent_context": agent_context });
-
-        let payload = api_types::CreateIssueRequest {
-            id: None,
+        let payload = CreateTask {
             project_id,
-            status_id,
             title,
             description: expanded_description,
-            priority: None,
-            start_date: None,
-            target_date: None,
-            completed_at: None,
-            sort_order: 0.0,
-            parent_issue_id: None,
-            parent_issue_sort_order: None,
-            extension_metadata,
+            status: Some(TaskStatus::Backlog),
+            task_type: None,
+            parent_workspace_id: None,
+            parent_task_id: None,
+            image_ids: None,
+            sort_order: None,
+            plan_status: None,
+            is_human: None,
         };
 
-        let url = self.url("/api/remote/issues");
-        let response: MutationResponse<Issue> =
-            match self.send_json(self.client.post(&url).json(&payload)).await {
-                Ok(r) => r,
-                Err(e) => return Ok(e),
-            };
+        let url = self.url("/api/tasks");
+        let task: Task = match self.send_json(self.client.post(&url).json(&payload)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
+        };
 
-        TaskServer::success(&McpCreateIssueWithContextResponse {
-            issue_id: response.data.id.to_string(),
+        TaskServer::success(&McpCreateTaskWithContextResponse {
+            task_id: task.id.to_string(),
         })
     }
 
     #[tool(
-        description = "Check if the Wickeban server is running and reachable. Call this before creating issues to ensure the server is available."
+        description = "Check if the Wickeban server is running and reachable. Call this before creating tasks to ensure the server is available."
     )]
     async fn ping(&self) -> Result<CallToolResult, ErrorData> {
-        let url = self.url("/health");
+        let url = self.url("/api/health");
         match self.client.get(&url).send().await {
             Ok(resp) if resp.status().is_success() => TaskServer::success(&McpPingResponse {
                 status: "ok".to_string(),
@@ -1168,9 +889,9 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or issues then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_issues` to fetch the `issue_ids` of all the issues in a project. TOOLS: 'ping', 'list_organizations', 'list_projects', 'list_issues', 'search_issues', 'create_issue', 'create_issue_with_context', 'get_issue', 'update_issue', 'delete_issue', 'add_comment'. Before creating an issue, use 'search_issues' to check for duplicates. Use 'add_comment' to append context to existing issues. Use 'create_issue_with_context' to provide structured metadata (file paths, error output, git refs). Use 'ping' to verify the server is running. Make sure to pass `project_id` or `issue_id` where required.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tasks then use these tools. Most of them require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the task IDs. TOOLS: 'ping', 'list_projects', 'list_tasks', 'search_tasks', 'create_task', 'create_task_with_context', 'get_task', 'update_task', 'delete_task'. Before creating a task, use 'search_tasks' to check for duplicates. Use 'create_task_with_context' to provide structured metadata (file paths, error output, git refs). Use 'ping' to verify the server is running. Valid task statuses: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled.".to_string();
         if self.context.is_some() {
-            let context_instruction = "Use 'get_context' to fetch project/issue/workspace metadata for the active Wickeban workspace session when available.";
+            let context_instruction = "Use 'get_context' to fetch project/workspace metadata for the active Wickeban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);
         }
 
