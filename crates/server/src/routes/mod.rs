@@ -1,7 +1,8 @@
 use axum::{
-    Router,
+    Extension, Router,
     routing::{IntoMakeService, get},
 };
+use services::services::usage_poller::UsageCache;
 use tower_http::validate_request::ValidateRequestHeaderLayer;
 
 use crate::{DeploymentImpl, middleware};
@@ -27,8 +28,9 @@ pub mod tags;
 pub mod task_attempts;
 pub mod tasks;
 pub mod terminal;
+pub mod usage;
 
-pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
+pub fn router(deployment: DeploymentImpl, usage_cache: UsageCache) -> IntoMakeService<Router> {
     // Create routers with different middleware layers
     let base_routes = Router::new()
         .route("/health", get(health::health_check))
@@ -49,7 +51,9 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(spec_sheets::router())
         .merge(planning_sessions::router())
         .merge(terminal::router())
+        .merge(usage::router())
         .nest("/images", images::routes())
+        .layer(Extension(usage_cache))
         .layer(ValidateRequestHeaderLayer::custom(
             middleware::validate_origin,
         ))
