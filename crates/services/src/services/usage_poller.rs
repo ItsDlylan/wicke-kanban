@@ -1,16 +1,35 @@
 use std::{sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(export)]
 pub struct ClaudeUsageData {
     pub configured: bool,
-    pub usage: Option<serde_json::Value>,
-    pub last_updated_at: Option<DateTime<Utc>>,
+    pub daily_input_tokens: Option<u64>,
+    pub daily_output_tokens: Option<u64>,
+    pub cache_creation_tokens: Option<u64>,
+    pub cache_read_tokens: Option<u64>,
+    pub last_updated: Option<DateTime<Utc>>,
     pub error: Option<String>,
+}
+
+impl Default for ClaudeUsageData {
+    fn default() -> Self {
+        Self {
+            configured: false,
+            daily_input_tokens: None,
+            daily_output_tokens: None,
+            cache_creation_tokens: None,
+            cache_read_tokens: None,
+            last_updated: None,
+            error: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -97,9 +116,7 @@ impl UsagePoller {
                     let mut guard = self.data.write().await;
                     *guard = Some(ClaudeUsageData {
                         configured: false,
-                        usage: None,
-                        last_updated_at: None,
-                        error: None,
+                        ..Default::default()
                     });
                     current_backoff = DEFAULT_POLL_INTERVAL;
                     continue;
@@ -112,8 +129,15 @@ impl UsagePoller {
                     let mut guard = self.data.write().await;
                     *guard = Some(ClaudeUsageData {
                         configured: true,
-                        usage: Some(body),
-                        last_updated_at: Some(Utc::now()),
+                        daily_input_tokens: body.get("daily_input_tokens").and_then(|v| v.as_u64()),
+                        daily_output_tokens: body
+                            .get("daily_output_tokens")
+                            .and_then(|v| v.as_u64()),
+                        cache_creation_tokens: body
+                            .get("cache_creation_tokens")
+                            .and_then(|v| v.as_u64()),
+                        cache_read_tokens: body.get("cache_read_tokens").and_then(|v| v.as_u64()),
+                        last_updated: Some(Utc::now()),
                         error: None,
                     });
                     current_backoff = DEFAULT_POLL_INTERVAL;
@@ -122,9 +146,7 @@ impl UsagePoller {
                     let mut guard = self.data.write().await;
                     *guard = Some(ClaudeUsageData {
                         configured: false,
-                        usage: None,
-                        last_updated_at: None,
-                        error: None,
+                        ..Default::default()
                     });
                     current_backoff = DEFAULT_POLL_INTERVAL;
                 }
@@ -143,9 +165,8 @@ impl UsagePoller {
                     } else {
                         *guard = Some(ClaudeUsageData {
                             configured: true,
-                            usage: None,
-                            last_updated_at: None,
                             error: Some("OAuth token expired or invalid".to_string()),
+                            ..Default::default()
                         });
                     }
                     current_backoff = DEFAULT_POLL_INTERVAL;
@@ -158,9 +179,8 @@ impl UsagePoller {
                     } else {
                         *guard = Some(ClaudeUsageData {
                             configured: true,
-                            usage: None,
-                            last_updated_at: None,
                             error: Some(msg),
+                            ..Default::default()
                         });
                     }
                     current_backoff = DEFAULT_POLL_INTERVAL;
@@ -173,9 +193,8 @@ impl UsagePoller {
                     } else {
                         *guard = Some(ClaudeUsageData {
                             configured: true,
-                            usage: None,
-                            last_updated_at: None,
                             error: Some(format!("Failed to parse response: {}", msg)),
+                            ..Default::default()
                         });
                     }
                     current_backoff = DEFAULT_POLL_INTERVAL;
