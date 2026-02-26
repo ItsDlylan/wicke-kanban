@@ -1602,6 +1602,21 @@ export const migrationApi = {
   },
 };
 
+// Usage API
+export interface ClaudeUsageData {
+  configured: boolean;
+  usage: Record<string, unknown> | null;
+  last_updated_at: string | null;
+  error: string | null;
+}
+
+export const usageApi = {
+  get: async (): Promise<ClaudeUsageData | null> => {
+    const response = await makeRequest('/api/usage');
+    return handleApiResponse<ClaudeUsageData | null>(response);
+  },
+};
+
 // Search API (multi-repo file search)
 export const searchApi = {
   searchFiles: async (

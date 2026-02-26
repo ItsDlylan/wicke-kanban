@@ -18,6 +18,7 @@ use services::services::{
     project::ProjectService,
     queued_message::QueuedMessageService,
     repo::RepoService,
+    usage_poller::{ClaudeUsageData, UsagePoller},
     worktree_manager::WorktreeManager,
 };
 use tokio::sync::RwLock;
@@ -46,6 +47,7 @@ pub struct LocalDeployment {
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
     pty: PtyService,
+    usage_data: Arc<RwLock<Option<ClaudeUsageData>>>,
 }
 
 #[async_trait]
@@ -140,6 +142,8 @@ impl Deployment for LocalDeployment {
         let file_search_cache = Arc::new(FileSearchCache::new());
 
         let pty = PtyService::new();
+        let (usage_poller, usage_data) = UsagePoller::new();
+        usage_poller.spawn();
         {
             let db = db.clone();
             let analytics = analytics.as_ref().map(|s| AnalyticsContext {
@@ -166,6 +170,7 @@ impl Deployment for LocalDeployment {
             approvals,
             queued_message_service,
             pty,
+            usage_data,
         };
 
         Ok(deployment)
@@ -225,6 +230,10 @@ impl Deployment for LocalDeployment {
 
     fn queued_message_service(&self) -> &QueuedMessageService {
         &self.queued_message_service
+    }
+
+    fn usage_data(&self) -> &Arc<RwLock<Option<ClaudeUsageData>>> {
+        &self.usage_data
     }
 }
 

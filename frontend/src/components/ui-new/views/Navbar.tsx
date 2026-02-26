@@ -3,6 +3,7 @@ import type { Icon } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '../primitives/Tooltip';
 import { SyncErrorIndicator } from '../primitives/SyncErrorIndicator';
+import { UsageIndicator } from '../primitives/UsageIndicator';
 import {
   type ActionDefinition,
   type ActionVisibilityContext,
@@ -24,8 +25,7 @@ function isDivider(item: NavbarItem): item is { readonly type: 'divider' } {
 }
 
 // NavbarIconButton - inlined from primitives
-interface NavbarIconButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface NavbarIconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon: Icon;
   isActive?: boolean;
   tooltip?: string;
@@ -150,6 +150,7 @@ export function Navbar({
 
       {/* Right - Sync Error Indicator + Diff Controls + Panel Toggles (dividers inline) */}
       <div className="flex-1 flex items-center justify-end gap-base">
+        <UsageIndicator />
         <SyncErrorIndicator />
         {rightItems.map((item, index) =>
           renderItem(
