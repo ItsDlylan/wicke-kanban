@@ -112,7 +112,8 @@
           "integrations/azure-repos-integration",
           "integrations/vscode-extension",
           "integrations/mcp-server-configuration",
-          "integrations/wickeban-mcp-server"
+          "integrations/wickeban-mcp-server",
+          "integrations/mcp-agent-rules"
         ]
       },
       {

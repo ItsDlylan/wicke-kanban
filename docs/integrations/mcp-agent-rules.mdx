@@ -1,0 +1,95 @@
+---
+title: "Agent Rules for Wickeban MCP"
+description: "Claude Rules snippet for configuring external agents to file and manage Wickeban tickets automatically"
+---
+
+When coding agents on other projects are connected to the Wickeban MCP server, they need rules that tell them **when** to file tickets and **how** to use the tools. Add the following section to the `CLAUDE.md` (or equivalent agent rules file) of any project whose agents should report issues to Wickeban.
+
+<Info>
+This assumes the Wickeban MCP server is already configured for the agent. See the [Wickeban MCP Server](/integrations/wickeban-mcp-server) guide for setup instructions.
+</Info>
+
+## Rules Snippet
+
+Copy the section below into your project's `CLAUDE.md`:
+
+````markdown
+## Wickeban Integration
+
+This project uses Wickeban for task tracking. The `wickeban` MCP server is
+available — use it to file and manage tickets when appropriate.
+
+### Connection
+
+Before using any wickeban tools, call `ping` to confirm the server is reachable.
+If it fails, skip ticket operations silently and continue your work — don't let a
+downed server block you.
+
+### When to Create a Ticket
+
+File a ticket when you encounter something that **cannot be resolved in the
+current session**:
+
+- A failing test you cannot fix after a reasonable attempt
+- A bug in a dependency or unrelated module that blocks your task
+- Tech debt or code smell discovered during work that is out of scope
+- A missing feature or API that another team needs to provide
+- An environment or infrastructure issue (broken CI, missing secrets, bad config)
+
+**Do not file tickets for:**
+
+- Transient errors (network timeouts, flaky tests) — retry first
+- Issues you can resolve yourself in the current session
+- Questions or design decisions — discuss with the user instead
+- Cosmetic or stylistic preferences
+
+### Workflow
+
+Always follow this sequence:
+
+1. **`ping`** — verify wickeban is up
+2. **`search_issues`** with keywords from the problem — check for duplicates
+3. If a matching issue exists → **`add_comment`** with your new context
+   (stack trace, reproduction steps, what you tried)
+4. If no match → **`create_issue_with_context`** with structured fields
+
+### Filing Good Tickets
+
+Use `create_issue_with_context` (not `create_issue`) so the planning agent can
+parse structured metadata. Fill in every field you have:
+
+- **`title`**: Short, specific, imperative. "Fix X" or "Handle Y in Z" — not
+  "Error occurred"
+- **`summary`**: 1-2 sentences of what happened and why it matters
+- **`repo_name`**: This repository's name
+- **`file_path`** + **`line_number`**: Where the issue manifests
+- **`git_ref`**: Current commit hash (`git rev-parse HEAD`)
+- **`command`**: The command that triggered the error
+- **`error_output`**: Relevant error output or stack trace (truncate to ~100
+  lines)
+
+### Adding Comments
+
+When you find an existing issue via `search_issues`, use `add_comment` instead
+of creating a duplicate. Good comments include:
+
+- Additional reproduction context ("Also occurs when running X")
+- Stack traces from a different code path
+- What you tried and why it didn't work
+- Links between this issue and your current task
+
+### What Not to Do
+
+- Don't create issues for work you're actively completing — just do the work
+- Don't update issue status — the planning pipeline handles that
+- Don't delete issues — flag concerns in a comment instead
+- Don't batch-create issues — file them as you encounter them naturally
+````
+
+## Customisation
+
+You may want to adjust the snippet for your project:
+
+- **`project_id`**: If the agent won't be running inside a linked Wickeban workspace, add a line like `Always pass project_id: "your-uuid-here"` so the agent doesn't need to look it up each time.
+- **Ticket thresholds**: Some teams want agents to file more aggressively (e.g. any `TODO` or `FIXME` found during work). Others want agents to only file on hard blockers. Adjust the "When to Create a Ticket" section to match your team's preference.
+- **Labels or priorities**: If your Wickeban project uses status names as triage categories, add guidance like `Set status to "Triage" for all new issues`.
