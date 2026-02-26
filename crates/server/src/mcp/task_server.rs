@@ -39,6 +39,16 @@ pub struct TaskSummary {
     pub updated_at: String,
 }
 
+/// Slim task representation for list endpoints — no description to save tokens.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TaskListItem {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct McpCreateTaskRequest {
     #[schemars(
@@ -97,11 +107,15 @@ pub struct McpListTasksRequest {
     pub project_id: Option<Uuid>,
     #[schemars(description = "Maximum number of tasks to return (default: 50)")]
     pub limit: Option<i32>,
+    #[schemars(
+        description = "Filter to only return child tasks of this parent task ID. Useful for listing stories/subtasks."
+    )]
+    pub parent_task_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct McpListTasksResponse {
-    pub tasks: Vec<TaskSummary>,
+    pub tasks: Vec<TaskListItem>,
     pub count: usize,
     pub project_id: String,
 }
@@ -173,7 +187,7 @@ pub struct McpSearchTasksRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct McpSearchTasksResponse {
-    pub tasks: Vec<TaskSummary>,
+    pub tasks: Vec<TaskListItem>,
     pub count: usize,
     pub project_id: String,
     pub query: String,
@@ -511,6 +525,16 @@ impl TaskServer {
         }
     }
 
+    fn task_to_list_item(task: &Task) -> TaskListItem {
+        TaskListItem {
+            id: task.id.to_string(),
+            title: task.title.clone(),
+            status: task.status.to_string(),
+            created_at: task.created_at.to_rfc3339(),
+            updated_at: task.updated_at.to_rfc3339(),
+        }
+    }
+
     /// Parses a status string to TaskStatus, returning a helpful error listing valid values.
     fn resolve_task_status(s: &str) -> Result<TaskStatus, CallToolResult> {
         TaskStatus::from_str(s).map_err(|_| {
@@ -618,7 +642,11 @@ impl TaskServer {
     )]
     async fn list_tasks(
         &self,
-        Parameters(McpListTasksRequest { project_id, limit }): Parameters<McpListTasksRequest>,
+        Parameters(McpListTasksRequest {
+            project_id,
+            limit,
+            parent_task_id,
+        }): Parameters<McpListTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
             Ok(id) => id,
@@ -632,15 +660,19 @@ impl TaskServer {
         };
 
         let task_limit = limit.unwrap_or(50).max(0) as usize;
-        let summaries: Vec<TaskSummary> = tasks
+        let items: Vec<TaskListItem> = tasks
             .iter()
+            .filter(|t| match parent_task_id {
+                Some(pid) => t.task.parent_task_id == Some(pid),
+                None => true,
+            })
             .take(task_limit)
-            .map(|t| Self::task_to_summary(&t.task))
+            .map(|t| Self::task_to_list_item(&t.task))
             .collect();
 
         TaskServer::success(&McpListTasksResponse {
-            count: summaries.len(),
-            tasks: summaries,
+            count: items.len(),
+            tasks: items,
             project_id: project_id.to_string(),
         })
     }
@@ -755,11 +787,11 @@ impl TaskServer {
         let query_lower = query.to_lowercase();
         let result_limit = limit.unwrap_or(10).max(0) as usize;
 
-        let matched: Vec<TaskSummary> = tasks
+        let matched: Vec<TaskListItem> = tasks
             .iter()
             .filter(|t| t.task.title.to_lowercase().contains(&query_lower))
             .take(result_limit)
-            .map(|t| Self::task_to_summary(&t.task))
+            .map(|t| Self::task_to_list_item(&t.task))
             .collect();
 
         TaskServer::success(&McpSearchTasksResponse {
