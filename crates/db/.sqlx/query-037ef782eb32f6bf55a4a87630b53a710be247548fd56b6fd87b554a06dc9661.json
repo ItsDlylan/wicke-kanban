@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sad.agent_id as \"agent_id!: Uuid\",\n                      sad.depends_on_agent_id as \"depends_on_agent_id!: Uuid\"\n               FROM swarm_agent_dependencies sad\n               JOIN swarm_agents sa ON sa.id = sad.agent_id\n               WHERE sa.swarm_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "agent_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "depends_on_agent_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "037ef782eb32f6bf55a4a87630b53a710be247548fd56b6fd87b554a06dc9661"
+}

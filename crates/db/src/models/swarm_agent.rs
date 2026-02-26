@@ -125,6 +125,28 @@ impl SwarmAgent {
         .await
     }
 
+    pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            SwarmAgent,
+            r#"SELECT id as "id!: Uuid", swarm_id as "swarm_id!: Uuid",
+                      execution_process_id as "execution_process_id: Uuid",
+                      subtask_description, generation as "generation!: i64",
+                      predecessor_id as "predecessor_id: Uuid",
+                      status as "status!: SwarmAgentStatus",
+                      context_tokens_used as "context_tokens_used: i64",
+                      context_window_size as "context_window_size: i64",
+                      context_threshold as "context_threshold!: f64",
+                      sort_order as "sort_order!: i64",
+                      created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM swarm_agents
+               WHERE rowid = $1"#,
+            rowid,
+        )
+        .fetch_optional(pool)
+        .await
+    }
+
     pub async fn find_by_execution_process_id(
         pool: &SqlitePool,
         execution_process_id: Uuid,

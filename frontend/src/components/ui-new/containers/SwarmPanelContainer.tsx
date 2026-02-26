@@ -1,13 +1,18 @@
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useSwarmData } from '@/hooks/useSwarmData';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useLogsPanel } from '@/contexts/LogsPanelContext';
 import { SwarmAgentCard } from '@/components/ui-new/swarm/SwarmAgentCard';
 import { SwarmSuccessionCard } from '@/components/ui-new/swarm/SwarmSuccessionCard';
+import { SwarmTimeline } from '@/components/ui-new/swarm/SwarmTimeline';
+import { Tooltip } from '@/components/ui-new/primitives/Tooltip';
+import { CollapsibleSectionHeader } from '@/components/ui-new/primitives/CollapsibleSectionHeader';
 import {
   RIGHT_MAIN_PANEL_MODES,
   useWorkspacePanelState,
 } from '@/stores/useUiPreferencesStore';
+import { formatDateShortWithTime } from '@/utils/date';
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   pending: { label: 'Pending', className: 'bg-secondary text-low' },
@@ -23,6 +28,26 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   },
 };
 
+const ROUTING_LABELS: Record<string, { label: string; description: string }> = {
+  single: {
+    label: 'Single Agent',
+    description: 'One agent handles the full task',
+  },
+  single_verifier: {
+    label: 'Single + Verifier',
+    description: 'One agent with verification checking',
+  },
+  vs_shallow: {
+    label: 'VS Shallow',
+    description:
+      'Verified succession — one generation of successor if context threshold is reached',
+  },
+  vs_deep: {
+    label: 'VS Deep',
+    description: 'Full verified succession swarm with multiple generations',
+  },
+};
+
 interface SwarmPanelContainerProps {
   className?: string;
 }
@@ -33,8 +58,26 @@ export function SwarmPanelContainer({ className }: SwarmPanelContainerProps) {
   const { setRightMainPanelMode } = useWorkspacePanelState(workspaceId);
 
   const taskId = workspace?.task_id ?? undefined;
-  const { swarm, agents, successions, isLoading, error, cancel } =
+  const { swarm, agents, successions, dependencies, isLoading, error, cancel } =
     useSwarmData(taskId);
+
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  // Reset cancelling state when swarm status changes to cancelled
+  useEffect(() => {
+    if (swarm?.status === 'cancelled') {
+      setIsCancelling(false);
+    }
+  }, [swarm?.status]);
+
+  const handleCancel = useCallback(async () => {
+    setIsCancelling(true);
+    try {
+      await cancel();
+    } catch {
+      setIsCancelling(false);
+    }
+  }, [cancel]);
 
   const handleAgentSelect = (executionProcessId: string) => {
     viewProcessInPanel(executionProcessId);
@@ -75,6 +118,9 @@ export function SwarmPanelContainer({ className }: SwarmPanelContainerProps) {
 
   const completedCount = agents.filter((a) => a.status === 'completed').length;
   const statusStyle = STATUS_LABELS[swarm.status] ?? STATUS_LABELS.pending;
+  const routingInfo = swarm.routing_decision
+    ? ROUTING_LABELS[swarm.routing_decision]
+    : null;
 
   return (
     <div className={cn('flex h-full flex-col overflow-hidden', className)}>
@@ -90,20 +136,38 @@ export function SwarmPanelContainer({ className }: SwarmPanelContainerProps) {
           >
             {statusStyle.label}
           </span>
-          {swarm.routing_decision && (
-            <span className="text-xs text-low">{swarm.routing_decision}</span>
-          )}
+          {swarm.routing_decision &&
+            (routingInfo ? (
+              <Tooltip content={routingInfo.description}>
+                <span className="cursor-help text-xs text-low">
+                  {routingInfo.label}
+                </span>
+              </Tooltip>
+            ) : (
+              <span className="text-xs text-low">{swarm.routing_decision}</span>
+            ))}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-low">
             {completedCount}/{agents.length}
           </span>
+          {swarm.status === 'cancelled' && (
+            <span className="text-xs text-low">
+              Cancelled {formatDateShortWithTime(swarm.updated_at)}
+            </span>
+          )}
           {(swarm.status === 'running' || swarm.status === 'pending') && (
             <button
-              className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-500/30"
-              onClick={cancel}
+              className={cn(
+                'rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-400 transition-colors',
+                isCancelling
+                  ? 'cursor-not-allowed opacity-50'
+                  : 'hover:bg-red-500/30'
+              )}
+              onClick={handleCancel}
+              disabled={isCancelling}
             >
-              Cancel
+              {isCancelling ? 'Cancelling...' : 'Cancel'}
             </button>
           )}
         </div>
@@ -116,6 +180,8 @@ export function SwarmPanelContainer({ className }: SwarmPanelContainerProps) {
             <SwarmAgentCard
               key={agent.id}
               agent={agent}
+              agents={agents}
+              dependencies={dependencies}
               onSelect={handleAgentSelect}
             />
           ))}
@@ -132,11 +198,27 @@ export function SwarmPanelContainer({ className }: SwarmPanelContainerProps) {
                 <SwarmSuccessionCard
                   key={succession.id}
                   succession={succession}
+                  agents={agents}
+                  onAgentSelect={handleAgentSelect}
                 />
               ))}
             </div>
           </div>
         )}
+
+        {/* Timeline */}
+        <CollapsibleSectionHeader
+          persistKey="swarm:timeline"
+          title="Timeline"
+          defaultExpanded={false}
+          className="mt-3"
+        >
+          <SwarmTimeline
+            swarm={swarm}
+            agents={agents}
+            successions={successions}
+          />
+        </CollapsibleSectionHeader>
       </div>
     </div>
   );

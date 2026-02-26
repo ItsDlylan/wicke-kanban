@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { swarmsApi } from '@/lib/api';
+import { useSwarmStream } from '@/hooks/useSwarmStream';
 import type { SwarmOverview } from 'shared/types';
 
 /**
  * Polls the swarm API for the given task, returning reactive swarm data.
- * Polls every 3 seconds while the swarm is active (pending/running).
+ * Used as fallback when WebSocket is not connected.
  */
-export function useSwarmData(taskId: string | undefined) {
+function useSwarmDataPolling(taskId: string | undefined) {
   const [data, setData] = useState<SwarmOverview | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,6 @@ export function useSwarmData(taskId: string | undefined) {
     setIsLoading(true);
     fetchSwarm();
 
-    // Poll while swarm is active
     const interval = setInterval(() => {
       if (
         data === null ||
@@ -47,23 +47,50 @@ export function useSwarmData(taskId: string | undefined) {
     return () => clearInterval(interval);
   }, [taskId, fetchSwarm, data?.status]);
 
-  const cancel = useCallback(async () => {
-    if (!data) return;
-    try {
-      await swarmsApi.cancel(data.id);
-      fetchSwarm();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to cancel swarm');
-    }
-  }, [data, fetchSwarm]);
-
   return {
     swarm: data,
     agents: data?.agents ?? [],
     successions: data?.successions ?? [],
+    dependencies: data?.dependencies ?? [],
     isLoading,
     error,
-    cancel,
     refetch: fetchSwarm,
+  };
+}
+
+/**
+ * Primary hook: WS-first with polling fallback.
+ * Supports optional swarmId override for viewing historical swarms.
+ */
+export function useSwarmData(taskId: string | undefined) {
+  const wsData = useSwarmStream(taskId);
+  const pollData = useSwarmDataPolling(wsData.isConnected ? undefined : taskId);
+
+  // Prefer WebSocket data when connected
+  const source = wsData.isConnected ? wsData : pollData;
+
+  const cancel = useCallback(async () => {
+    const swarmId = source.swarm?.id;
+    if (!swarmId) return;
+    try {
+      await swarmsApi.cancel(swarmId);
+      if (!wsData.isConnected) {
+        pollData.refetch();
+      }
+    } catch (e) {
+      throw e instanceof Error ? e : new Error('Failed to cancel swarm');
+    }
+  }, [source.swarm?.id, wsData.isConnected, pollData]);
+
+  return {
+    swarm: source.swarm,
+    agents: source.agents,
+    successions: source.successions,
+    dependencies: source.dependencies,
+    isLoading: !wsData.isConnected && pollData.isLoading,
+    error: wsData.error ?? pollData.error,
+    cancel,
+    refetch: pollData.refetch,
+    isWebSocket: wsData.isConnected,
   };
 }

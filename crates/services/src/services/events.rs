@@ -4,7 +4,8 @@ use db::{
     DBService,
     models::{
         execution_process::ExecutionProcess, project::Project, scratch::Scratch, session::Session,
-        task::Task, workspace::Workspace,
+        swarm::Swarm, swarm_agent::SwarmAgent, swarm_succession::SwarmSuccession, task::Task,
+        workspace::Workspace,
     },
 };
 use serde_json::json;
@@ -21,7 +22,8 @@ mod streams;
 pub mod types;
 
 pub use patches::{
-    execution_process_patch, project_patch, scratch_patch, task_patch, workspace_patch,
+    execution_process_patch, project_patch, scratch_patch, swarm_overview_patch, task_patch,
+    workspace_patch,
 };
 pub use types::{EventError, EventPatch, EventPatchInner, HookTables, RecordTypes};
 
@@ -88,6 +90,52 @@ impl EventService {
             msg_store.push_patch(workspace_patch::replace(&workspace_with_status));
         }
         Ok(())
+    }
+
+    /// Build a swarm overview JSON and push it as a patch for the given swarm.
+    async fn push_swarm_overview(pool: &SqlitePool, msg_store: Arc<MsgStore>, swarm: &Swarm) {
+        use db::models::swarm_agent_dependency::SwarmAgentDependency;
+
+        let agents = match SwarmAgent::find_by_swarm_id(pool, swarm.id).await {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::error!("Failed to fetch swarm agents for overview: {:?}", e);
+                return;
+            }
+        };
+        let successions = match SwarmSuccession::find_by_swarm_id(pool, swarm.id).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to fetch swarm successions for overview: {:?}", e);
+                return;
+            }
+        };
+        let dependencies = match SwarmAgentDependency::find_by_swarm_agents(pool, swarm.id).await {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!("Failed to fetch swarm dependencies for overview: {:?}", e);
+                return;
+            }
+        };
+
+        // Build the overview JSON matching the SwarmOverview shape (swarm flattened + agents + successions + dependencies)
+        let mut overview = serde_json::to_value(swarm).unwrap_or_default();
+        if let Some(obj) = overview.as_object_mut() {
+            obj.insert(
+                "agents".to_string(),
+                serde_json::to_value(&agents).unwrap_or_default(),
+            );
+            obj.insert(
+                "successions".to_string(),
+                serde_json::to_value(&successions).unwrap_or_default(),
+            );
+            obj.insert(
+                "dependencies".to_string(),
+                serde_json::to_value(&dependencies).unwrap_or_default(),
+            );
+        }
+
+        msg_store.push_patch(swarm_overview_patch::replace(swarm.task_id, overview));
     }
 
     /// Creates the hook function that should be used with DBService::new_with_after_connect
@@ -183,6 +231,56 @@ impl EventService {
                                 | (HookTables::ExecutionProcesses, SqliteOperation::Delete)
                                 | (HookTables::Scratch, SqliteOperation::Delete) => {
                                     // Deletions handled in preupdate hook for reliable data capture
+                                    return;
+                                }
+                                // Swarm-related tables: push full overview snapshot
+                                (HookTables::Swarms, SqliteOperation::Delete)
+                                | (HookTables::SwarmAgents, SqliteOperation::Delete)
+                                | (HookTables::SwarmSuccessions, SqliteOperation::Delete) => {
+                                    // Swarm deletes not common, skip for now
+                                    return;
+                                }
+                                (HookTables::Swarms, _) => {
+                                    if let Ok(Some(swarm)) =
+                                        Swarm::find_by_rowid(&db.pool, rowid).await
+                                    {
+                                        EventService::push_swarm_overview(
+                                            &db.pool,
+                                            msg_store_for_hook.clone(),
+                                            &swarm,
+                                        )
+                                        .await;
+                                    }
+                                    return;
+                                }
+                                (HookTables::SwarmAgents, _) => {
+                                    if let Ok(Some(agent)) =
+                                        SwarmAgent::find_by_rowid(&db.pool, rowid).await
+                                        && let Ok(Some(swarm)) =
+                                            Swarm::find_by_id(&db.pool, agent.swarm_id).await
+                                    {
+                                        EventService::push_swarm_overview(
+                                            &db.pool,
+                                            msg_store_for_hook.clone(),
+                                            &swarm,
+                                        )
+                                        .await;
+                                    }
+                                    return;
+                                }
+                                (HookTables::SwarmSuccessions, _) => {
+                                    if let Ok(Some(succession)) =
+                                        SwarmSuccession::find_by_rowid(&db.pool, rowid).await
+                                        && let Ok(Some(swarm)) =
+                                            Swarm::find_by_id(&db.pool, succession.swarm_id).await
+                                    {
+                                        EventService::push_swarm_overview(
+                                            &db.pool,
+                                            msg_store_for_hook.clone(),
+                                            &swarm,
+                                        )
+                                        .await;
+                                    }
                                     return;
                                 }
                                 (HookTables::Tasks, _) => {

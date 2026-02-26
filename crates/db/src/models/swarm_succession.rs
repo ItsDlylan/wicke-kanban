@@ -106,6 +106,28 @@ impl SwarmSuccession {
         .await
     }
 
+    pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            SwarmSuccession,
+            r#"SELECT id as "id!: Uuid", swarm_id as "swarm_id!: Uuid",
+                      predecessor_id as "predecessor_id!: Uuid",
+                      verifier_execution_id as "verifier_execution_id: Uuid",
+                      successor_id as "successor_id: Uuid",
+                      predecessor_self_assessment,
+                      verification_report,
+                      verifier_confidence as "verifier_confidence: f64",
+                      recovery_strategy,
+                      status as "status!: SwarmSuccessionStatus",
+                      created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM swarm_successions
+               WHERE rowid = $1"#,
+            rowid,
+        )
+        .fetch_optional(pool)
+        .await
+    }
+
     pub async fn find_by_swarm_id(
         pool: &SqlitePool,
         swarm_id: Uuid,

@@ -261,7 +261,8 @@ export type PersistKey =
   | `system:${string}`
   | `error:${string}`
   | `entry:${string}`
-  | `list-section-${string}`;
+  | `list-section-${string}`
+  | `swarm:${string}`;
 
 type State = {
   // UI preferences

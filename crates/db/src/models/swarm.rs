@@ -150,6 +150,47 @@ impl Swarm {
         .await
     }
 
+    pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            Swarm,
+            r#"SELECT id as "id!: Uuid", task_id as "task_id!: Uuid",
+                      workspace_id as "workspace_id!: Uuid",
+                      parent_agent_id as "parent_agent_id: Uuid",
+                      status as "status!: SwarmStatus",
+                      depth as "depth!: i64", max_depth as "max_depth!: i64",
+                      routing_decision,
+                      created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM swarms
+               WHERE rowid = $1"#,
+            rowid,
+        )
+        .fetch_optional(pool)
+        .await
+    }
+
+    pub async fn find_by_parent_agent_id(
+        pool: &SqlitePool,
+        parent_agent_id: Uuid,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            Swarm,
+            r#"SELECT id as "id!: Uuid", task_id as "task_id!: Uuid",
+                      workspace_id as "workspace_id!: Uuid",
+                      parent_agent_id as "parent_agent_id: Uuid",
+                      status as "status!: SwarmStatus",
+                      depth as "depth!: i64", max_depth as "max_depth!: i64",
+                      routing_decision,
+                      created_at as "created_at!: DateTime<Utc>",
+                      updated_at as "updated_at!: DateTime<Utc>"
+               FROM swarms
+               WHERE parent_agent_id = $1"#,
+            parent_agent_id,
+        )
+        .fetch_optional(pool)
+        .await
+    }
+
     pub async fn update_status(
         pool: &SqlitePool,
         id: Uuid,

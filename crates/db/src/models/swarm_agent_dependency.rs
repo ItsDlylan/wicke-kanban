@@ -1,6 +1,9 @@
-use sqlx::SqlitePool;
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, SqlitePool};
+use ts_rs::TS;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]
 pub struct SwarmAgentDependency {
     pub agent_id: Uuid,
     pub depends_on_agent_id: Uuid,
@@ -75,5 +78,23 @@ impl SwarmAgentDependency {
         .await?;
 
         Ok(rows.into_iter().map(|r| r.agent_id).collect())
+    }
+
+    /// Find all dependencies for agents belonging to the given swarm.
+    pub async fn find_by_swarm_agents(
+        pool: &SqlitePool,
+        swarm_id: Uuid,
+    ) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            SwarmAgentDependency,
+            r#"SELECT sad.agent_id as "agent_id!: Uuid",
+                      sad.depends_on_agent_id as "depends_on_agent_id!: Uuid"
+               FROM swarm_agent_dependencies sad
+               JOIN swarm_agents sa ON sa.id = sad.agent_id
+               WHERE sa.swarm_id = $1"#,
+            swarm_id,
+        )
+        .fetch_all(pool)
+        .await
     }
 }

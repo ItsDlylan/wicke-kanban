@@ -110,6 +110,7 @@ import {
   SwarmWithAgents,
   SwarmAgent,
   SwarmSuccession,
+  SwarmSummary,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1634,6 +1635,14 @@ export const swarmsApi = {
     });
     return handleApiResponse<void>(response);
   },
+
+  listForTask: async (taskId: string): Promise<SwarmSummary[]> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/swarms`);
+    return handleApiResponse<SwarmSummary[]>(response);
+  },
+
+  getSwarmStreamUrl: (taskId: string): string =>
+    `/api/tasks/${taskId}/swarm/ws`,
 };
 
 // Usage API

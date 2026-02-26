@@ -1,5 +1,13 @@
+import { WarningIcon } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
-import type { SwarmAgent, SwarmAgentStatus } from 'shared/types';
+import { useElapsedTime } from '@/hooks/useElapsedTime';
+import { formatElapsedDuration } from '@/utils/date';
+import { SwarmDependencyLabel } from '@/components/ui-new/swarm/SwarmDependencyLabel';
+import type {
+  SwarmAgent,
+  SwarmAgentDependency,
+  SwarmAgentStatus,
+} from 'shared/types';
 
 const STATUS_STYLES: Record<
   SwarmAgentStatus,
@@ -22,20 +30,48 @@ const STATUS_STYLES: Record<
 
 interface SwarmAgentCardProps {
   agent: SwarmAgent;
+  agents?: SwarmAgent[];
+  dependencies?: SwarmAgentDependency[];
   onSelect?: (executionProcessId: string) => void;
 }
 
-export function SwarmAgentCard({ agent, onSelect }: SwarmAgentCardProps) {
+export function SwarmAgentCard({
+  agent,
+  agents = [],
+  dependencies = [],
+  onSelect,
+}: SwarmAgentCardProps) {
   const style = STATUS_STYLES[agent.status];
   const contextUsed = Number(agent.context_tokens_used ?? 0);
   const contextWindow = Number(agent.context_window_size ?? 200000);
   const utilization =
     contextWindow > 0 ? Math.min(contextUsed / contextWindow, 1) : 0;
+  const thresholdPct = agent.context_threshold * 100;
+
+  const isRunning = agent.status === 'running';
+  const isTerminal =
+    agent.status === 'completed' ||
+    agent.status === 'failed' ||
+    agent.status === 'threshold';
+
+  // Duration tracking
+  const liveElapsed = useElapsedTime(agent.created_at, isRunning);
+  const staticElapsed =
+    isTerminal && agent.created_at
+      ? formatElapsedDuration(agent.created_at, agent.updated_at)
+      : null;
+  const elapsed = isRunning ? liveElapsed : staticElapsed;
+
+  // Show context bar for running + terminal statuses (not pending)
+  const showContextBar = agent.status !== 'pending';
 
   return (
     <div
       className={cn(
-        'rounded border border-white/5 bg-secondary p-2 transition-colors',
+        'rounded border bg-secondary p-2 transition-colors',
+        agent.status === 'threshold'
+          ? 'border-yellow-500/40 animate-pulse'
+          : 'border-white/5',
         agent.execution_process_id && 'cursor-pointer hover:bg-panel'
       )}
       onClick={() => {
@@ -49,6 +85,9 @@ export function SwarmAgentCard({ agent, onSelect }: SwarmAgentCardProps) {
           {agent.subtask_description}
         </span>
         <div className="flex shrink-0 items-center gap-1.5">
+          {elapsed && (
+            <span className="font-mono text-xs text-low">{elapsed}</span>
+          )}
           {Number(agent.generation) > 1 && (
             <span className="text-xs text-low">
               Gen {Number(agent.generation)}
@@ -66,13 +105,21 @@ export function SwarmAgentCard({ agent, onSelect }: SwarmAgentCardProps) {
         </div>
       </div>
 
-      {agent.status === 'running' && (
+      {/* Dependency labels */}
+      <SwarmDependencyLabel
+        agent={agent}
+        agents={agents}
+        dependencies={dependencies}
+      />
+
+      {/* Context utilization bar */}
+      {showContextBar && (
         <div className="mt-1.5">
           <div className="flex items-center justify-between text-xs text-low">
             <span>Context</span>
             <span>{Math.round(utilization * 100)}%</span>
           </div>
-          <div className="mt-0.5 h-1 rounded-full bg-primary">
+          <div className="relative mt-0.5 h-1 rounded-full bg-primary">
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-500',
@@ -84,7 +131,34 @@ export function SwarmAgentCard({ agent, onSelect }: SwarmAgentCardProps) {
               )}
               style={{ width: `${utilization * 100}%` }}
             />
+            {/* Threshold marker */}
+            <div
+              className="absolute top-0 h-full w-px bg-yellow-500/60"
+              style={{ left: `${thresholdPct}%` }}
+              title={`Threshold: ${Math.round(thresholdPct)}%`}
+            />
           </div>
+        </div>
+      )}
+
+      {/* Failure context */}
+      {agent.status === 'failed' && (
+        <div className="mt-1.5 flex items-center justify-between">
+          <div className="flex items-center gap-1 text-xs text-red-400">
+            <WarningIcon className="size-3" weight="fill" />
+            <span>Execution failed</span>
+          </div>
+          {agent.execution_process_id && onSelect && (
+            <button
+              className="text-xs text-low underline-offset-2 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(agent.execution_process_id!);
+              }}
+            >
+              View logs
+            </button>
+          )}
         </div>
       )}
     </div>

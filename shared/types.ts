@@ -673,7 +673,11 @@ export type SpecAssessment = { complexity_score: number, files_estimated: number
 
 export type SwarmWithAgents = { agents: Array<SwarmAgent>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
 
-export type SwarmOverview = { agents: Array<SwarmAgent>, successions: Array<SwarmSuccession>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+export type SwarmOverview = { agents: Array<SwarmAgent>, successions: Array<SwarmSuccession>, dependencies: Array<SwarmAgentDependency>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmSummary = { id: string, status: string, routing_decision: string | null, created_at: string, updated_at: string, agent_count: bigint, };
+
+export type SwarmAgentDependency = { agent_id: string, depends_on_agent_id: string, };
 
 export type ClaudeUsageData = { configured: boolean, usage: JsonValue | null, last_updated_at: string | null, error: string | null, };
 
