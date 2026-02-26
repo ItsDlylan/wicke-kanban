@@ -24,5 +24,6 @@ pub mod queued_message;
 pub mod ralph_loop;
 pub mod repo;
 pub mod spec_generator;
+pub mod usage_poller;
 pub mod workspace_manager;
 pub mod worktree_manager;
