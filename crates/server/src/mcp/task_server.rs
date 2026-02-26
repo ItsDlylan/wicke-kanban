@@ -155,6 +155,10 @@ pub struct McpUpdateTaskRequest {
         description = "New status for the task. Valid values: backlog, idea, planning, plangenerating, specreview, ready, ralph, inprogress, qa, done, cancelled."
     )]
     pub status: Option<String>,
+    #[schemars(
+        description = "Optional parent task ID. Set this to make the task a child/story of the specified parent task."
+    )]
+    pub parent_task_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -697,6 +701,7 @@ impl TaskServer {
             title,
             description,
             status,
+            parent_task_id,
         }): Parameters<McpUpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         // Resolve status name to TaskStatus if provided
@@ -719,6 +724,7 @@ impl TaskServer {
             "title": title,
             "description": expanded_description,
             "status": task_status,
+            "parent_task_id": parent_task_id,
         });
 
         let url = self.url(&format!("/api/tasks/{}", task_id));
