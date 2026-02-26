@@ -375,19 +375,18 @@ impl TaskServer {
             Self::err("Failed to read VK API response body", Some(&e.to_string())).unwrap()
         })?;
 
-        let api_response: ApiResponseEnvelope<T> =
-            serde_json::from_str(&body).map_err(|e| {
-                let preview = if body.len() > 500 {
-                    format!("{}...", &body[..500])
-                } else {
-                    body.clone()
-                };
-                Self::err(
-                    format!("Failed to parse VK API response: {}", e),
-                    Some(preview),
-                )
-                .unwrap()
-            })?;
+        let api_response: ApiResponseEnvelope<T> = serde_json::from_str(&body).map_err(|e| {
+            let preview = if body.len() > 500 {
+                format!("{}...", &body[..500])
+            } else {
+                body.clone()
+            };
+            Self::err(
+                format!("Failed to parse VK API response: {}", e),
+                Some(preview),
+            )
+            .unwrap()
+        })?;
 
         if !api_response.success {
             let msg = api_response.message.as_deref().unwrap_or("Unknown error");

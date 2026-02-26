@@ -350,6 +350,19 @@ ORDER BY t.created_at DESC"#,
         )
         .execute(pool)
         .await?;
+
+        // When a task is marked Done, cascade to any child stories (parent_task_id)
+        // that haven't been completed yet. Stories are sub-parts of the parent's work,
+        // so completing the parent means the stories' work is also done.
+        if status == TaskStatus::Done {
+            sqlx::query!(
+                "UPDATE tasks SET status = 'done', updated_at = CURRENT_TIMESTAMP WHERE parent_task_id = $1 AND status != 'done'",
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+
         Ok(())
     }
 
