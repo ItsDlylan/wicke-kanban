@@ -98,6 +98,11 @@ Use git worktrees to isolate development environments. Each worktree gets its ow
 - Rust: prefer unit tests alongside code (`#[cfg(test)]`), run `cargo test --workspace`. Add tests for new logic and edge cases.
 - Frontend: ensure `pnpm run check` and `pnpm run lint` pass. If adding runtime logic, include lightweight tests (e.g., Vitest) in the same directory.
 
+## Git Commits
+- Do NOT add "Co-Authored-By" lines or any AI attribution to commit messages
+- Do NOT add "Generated with Claude Code" or similar AI footers
+- Keep commit messages clean and professional
+
 ## Security & Config Tips
 - Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST` 
 - Dev ports and assets are managed by `scripts/setup-dev-environment.js`.
