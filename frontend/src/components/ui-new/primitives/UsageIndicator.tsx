@@ -224,8 +224,7 @@ export function UsageIndicator() {
 
             {data.last_updated_at && (
               <div className="text-[10px] text-muted-foreground">
-                Updated{' '}
-                {new Date(data.last_updated_at).toLocaleTimeString()}
+                Updated {new Date(data.last_updated_at).toLocaleTimeString()}
               </div>
             )}
           </div>
