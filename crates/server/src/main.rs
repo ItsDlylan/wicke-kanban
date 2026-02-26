@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
 use server::{DeploymentImpl, routes};
-use services::services::{auto_planner, container::ContainerService};
+use services::services::{auto_planner, container::ContainerService, usage_poller::UsagePoller};
 use sqlx::Error as SqlxError;
 use strip_ansi_escapes::strip;
 use thiserror::Error;
+use tokio::sync::RwLock;
 use tracing_subscriber::{EnvFilter, prelude::*};
 use utils::{
     assets::asset_dir,
@@ -84,7 +87,10 @@ async fn main() -> Result<(), WickebanError> {
         }
     });
 
-    let app_router = routes::router(deployment.clone());
+    let usage_cache = Arc::new(RwLock::new(None));
+    let _usage_poller_handle = UsagePoller::spawn(usage_cache.clone());
+
+    let app_router = routes::router(deployment.clone(), usage_cache);
 
     let port = std::env::var("BACKEND_PORT")
         .or_else(|_| std::env::var("PORT"))

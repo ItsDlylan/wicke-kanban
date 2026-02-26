@@ -142,8 +142,8 @@ impl Deployment for LocalDeployment {
         let file_search_cache = Arc::new(FileSearchCache::new());
 
         let pty = PtyService::new();
-        let (usage_poller, usage_data) = UsagePoller::new();
-        usage_poller.spawn();
+        let usage_data: Arc<RwLock<Option<ClaudeUsageData>>> = Arc::new(RwLock::new(None));
+        let _usage_poller_handle = UsagePoller::spawn(usage_data.clone());
         {
             let db = db.clone();
             let analytics = analytics.as_ref().map(|s| AnalyticsContext {
