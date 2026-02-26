@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
@@ -12,7 +12,14 @@ import type { WorkspaceWithSession } from '@/types/attempt';
 import { NewCardContent } from '../ui/new-card';
 import { Button } from '../ui/button';
 import { Alert } from '../ui/alert';
-import { ExternalLink, GitBranch, Loader2, PlusIcon } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  GitBranch,
+  Loader2,
+  PlusIcon,
+} from 'lucide-react';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -49,6 +56,31 @@ function StatusBadge({ status }: { status: string }) {
     >
       {label}
     </span>
+  );
+}
+
+function CopyableId({ id, label }: { id: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(id).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [id]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+      title={`Copy ${label ?? 'ID'}: ${id}`}
+    >
+      <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+      {copied ? (
+        <Check className="h-3 w-3 text-green-500" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
+    </button>
   );
 }
 
@@ -176,6 +208,12 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
       ),
       className: 'pr-4',
     },
+    {
+      id: 'id',
+      header: '',
+      accessor: (child) => <CopyableId id={child.id} label="story ID" />,
+      className: 'w-0 text-right',
+    },
   ];
 
   const attemptColumns: ColumnDef<WorkspaceWithSession>[] = [
@@ -229,6 +267,31 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
                 <WYSIWYGEditor value={titleContent} disabled />
                 {descriptionContent && (
                   <WYSIWYGEditor value={descriptionContent} disabled />
+                )}
+              </div>
+
+              {/* Task ID & Parent link */}
+              <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
+                <span className="flex items-center gap-1">
+                  ID: <CopyableId id={task.id} label="task ID" />
+                </span>
+                {task.parent_task_id && (
+                  <span className="flex items-center gap-1">
+                    Parent:
+                    <button
+                      onClick={() => {
+                        if (projectId) {
+                          navigate(paths.task(projectId, task.parent_task_id!));
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      title={`Go to parent task: ${task.parent_task_id}`}
+                    >
+                      <span className="font-mono text-xs underline">
+                        {task.parent_task_id.slice(0, 8)}
+                      </span>
+                    </button>
+                  </span>
                 )}
               </div>
 
