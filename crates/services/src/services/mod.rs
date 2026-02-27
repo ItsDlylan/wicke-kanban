@@ -14,6 +14,7 @@ pub mod filesystem;
 pub mod filesystem_watcher;
 pub mod git_host;
 pub mod image;
+pub mod interview;
 pub mod notification;
 pub mod oauth_credentials;
 pub mod plan_generator;
