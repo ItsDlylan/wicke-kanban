@@ -3,6 +3,7 @@ use std::{path::Path, sync::Arc};
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessStatus},
     session::CreateSession,
+    spec_sheet::SpecSheet,
     swarm::{Swarm, SwarmStatus},
     swarm_agent::{SwarmAgent, SwarmAgentStatus},
     swarm_agent_dependency::SwarmAgentDependency,
@@ -16,14 +17,20 @@ use executors::{
     actions::{
         ExecutorAction, ExecutorActionType, coding_agent_initial::CodingAgentInitialRequest,
     },
+    logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
     profile::ExecutorProfileId,
 };
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use thiserror::Error;
+use utils::log_msg::LogMsg;
 use uuid::Uuid;
 
-use super::{container::ContainerService, context_monitor::ContextMonitor};
+use super::{
+    container::ContainerService,
+    context_monitor::ContextMonitor,
+    decomposer::{self, DecomposerError},
+};
 
 #[derive(Debug, Error)]
 pub enum SwarmCoordinatorError {
@@ -49,12 +56,21 @@ pub enum SwarmCoordinatorError {
     NoChildTasks(Uuid),
     #[error("Workspace not found: {0}")]
     WorkspaceNotFound(Uuid),
+    #[error("Max sub-swarm depth exceeded for swarm {0}")]
+    MaxDepthExceeded(Uuid),
+    #[error("Decomposition failed: {0}")]
+    DecompositionFailed(#[from] DecomposerError),
 }
 
 // Safety caps
 const MAX_GENERATIONS: i64 = 5;
 const MAX_TOTAL_AGENTS: usize = 50;
 const DEFAULT_CONTEXT_THRESHOLD: f64 = 0.6;
+const DEFAULT_VERIFIER_MODEL: &str = "claude-haiku-4-5-20251001";
+
+// Redecomposition heuristic: trigger when succession_count >= this AND confidence < threshold
+const REDECOMPOSITION_SUCCESSION_THRESHOLD: i64 = 2;
+const REDECOMPOSITION_CONFIDENCE_THRESHOLD: f64 = 0.5;
 
 #[derive(Debug, Deserialize)]
 pub struct VerificationReport {
@@ -66,13 +82,14 @@ pub struct VerificationReport {
 
 pub enum SpawnResult {
     AgentStarted(Uuid),
+    AgentsStarted(Vec<Uuid>),
     AllComplete,
     Deadlocked,
 }
 
 /// Start a new swarm for the given task. The task must already have child tasks
 /// (decomposition children). Creates SwarmAgent records for each child, wires up
-/// dependencies, and starts executing the first eligible agent.
+/// dependencies, and starts executing all eligible agents concurrently.
 pub async fn start_swarm(
     pool: &SqlitePool,
     container: &(impl ContainerService + Sync + ?Sized),
@@ -144,8 +161,8 @@ pub async fn start_swarm(
     // Set swarm to running
     Swarm::update_status(pool, swarm.id, SwarmStatus::Running).await?;
 
-    // Start executing first eligible agent
-    spawn_next_agent(pool, container, swarm.id, executor_profile_id).await?;
+    // Start executing all eligible agents concurrently (section 3.2.1)
+    spawn_all_eligible_agents(pool, container, swarm.id, executor_profile_id).await?;
 
     // Re-fetch swarm with updated status
     Swarm::find_by_id(pool, swarm.id)
@@ -153,156 +170,197 @@ pub async fn start_swarm(
         .ok_or(SwarmCoordinatorError::SwarmNotFound(swarm.id))
 }
 
-/// Find and spawn the next eligible agent in the swarm.
+/// Find and spawn ALL eligible agents concurrently (section 3.2.1).
+/// This replaces the sequential spawn_next_agent for initial spawning.
+pub async fn spawn_all_eligible_agents(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    swarm_id: Uuid,
+    executor_profile_id: &ExecutorProfileId,
+) -> Result<SpawnResult, SwarmCoordinatorError> {
+    let eligible_agents = SwarmAgent::find_all_eligible(pool, swarm_id).await?;
+
+    if eligible_agents.is_empty() {
+        // No eligible agents. Check if all done or deadlocked.
+        if SwarmAgent::all_complete(pool, swarm_id).await? {
+            complete_swarm(pool, container, swarm_id).await?;
+            return Ok(SpawnResult::AllComplete);
+        } else {
+            Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
+            tracing::warn!(
+                "Swarm {} deadlocked: no eligible agents but not all complete",
+                swarm_id
+            );
+            return Ok(SpawnResult::Deadlocked);
+        }
+    }
+
+    // Safety cap: total agents
+    let total = SwarmAgent::count_by_swarm_id(pool, swarm_id).await? as usize;
+    if total >= MAX_TOTAL_AGENTS {
+        Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
+        return Err(SwarmCoordinatorError::MaxAgentsExceeded(swarm_id));
+    }
+
+    let mut started_ids = Vec::new();
+    for agent in eligible_agents {
+        match spawn_single_agent(pool, container, swarm_id, &agent, executor_profile_id).await {
+            Ok(agent_id) => started_ids.push(agent_id),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to spawn agent {} in swarm {}: {}",
+                    agent.id,
+                    swarm_id,
+                    e
+                );
+            }
+        }
+    }
+
+    if started_ids.is_empty() {
+        Ok(SpawnResult::Deadlocked)
+    } else if started_ids.len() == 1 {
+        Ok(SpawnResult::AgentStarted(started_ids[0]))
+    } else {
+        Ok(SpawnResult::AgentsStarted(started_ids))
+    }
+}
+
+/// Find and spawn the next eligible agent in the swarm (single-agent variant).
 pub async fn spawn_next_agent(
     pool: &SqlitePool,
     container: &(impl ContainerService + Sync + ?Sized),
     swarm_id: Uuid,
     executor_profile_id: &ExecutorProfileId,
 ) -> Result<SpawnResult, SwarmCoordinatorError> {
+    spawn_all_eligible_agents(pool, container, swarm_id, executor_profile_id).await
+}
+
+/// Spawn a single agent within the swarm, creating its workspace, session,
+/// and execution process.
+async fn spawn_single_agent(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    swarm_id: Uuid,
+    agent: &SwarmAgent,
+    executor_profile_id: &ExecutorProfileId,
+) -> Result<Uuid, SwarmCoordinatorError> {
     let swarm = Swarm::find_by_id(pool, swarm_id)
         .await?
         .ok_or(SwarmCoordinatorError::SwarmNotFound(swarm_id))?;
 
-    // Find next eligible agent
-    let next_agent = SwarmAgent::find_next_eligible(pool, swarm_id).await?;
+    // Build agent prompt — enrich with verification report for successors
+    let prompt = if agent.predecessor_id.is_some() {
+        let succession =
+            SwarmSuccession::find_active_for_agent(pool, agent.predecessor_id.unwrap()).await?;
+        let report = succession.and_then(|s| s.verification_report);
+        build_agent_prompt(&agent.subtask_description, report.as_deref())
+    } else {
+        build_agent_prompt(&agent.subtask_description, None)
+    };
 
-    match next_agent {
-        Some(agent) => {
-            // Safety cap: total agents
-            let total = SwarmAgent::count_by_swarm_id(pool, swarm_id).await? as usize;
-            if total >= MAX_TOTAL_AGENTS {
-                Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
-                return Err(SwarmCoordinatorError::MaxAgentsExceeded(swarm_id));
-            }
+    // Get parent workspace for branch/container info
+    let parent_workspace = Workspace::find_by_id(pool, swarm.workspace_id)
+        .await?
+        .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
 
-            // Build agent prompt — enrich with verification report for successors
-            let prompt = if agent.predecessor_id.is_some() {
-                // This is a successor — look up the succession's verification report
-                let succession =
-                    SwarmSuccession::find_active_for_agent(pool, agent.predecessor_id.unwrap())
-                        .await?;
-                let report = succession.and_then(|s| s.verification_report);
-                build_agent_prompt(&agent.subtask_description, report.as_deref())
-            } else {
-                build_agent_prompt(&agent.subtask_description, None)
-            };
+    // Create workspace for this agent (shares parent's worktree)
+    let workspace_id = Uuid::new_v4();
+    let child_workspace = Workspace::create(
+        pool,
+        &CreateWorkspace {
+            branch: parent_workspace.branch.clone(),
+            agent_working_dir: parent_workspace.agent_working_dir.clone(),
+        },
+        workspace_id,
+        swarm.task_id,
+    )
+    .await?;
 
-            // Get parent workspace for branch/container info
-            let parent_workspace = Workspace::find_by_id(pool, swarm.workspace_id)
-                .await?
-                .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
-
-            // Create workspace for this agent (shares parent's worktree)
-            let workspace_id = Uuid::new_v4();
-            let child_workspace = Workspace::create(
-                pool,
-                &CreateWorkspace {
-                    branch: parent_workspace.branch.clone(),
-                    agent_working_dir: parent_workspace.agent_working_dir.clone(),
-                },
-                workspace_id,
-                swarm.task_id,
-            )
+    // Copy workspace repos from parent
+    let parent_repos =
+        WorkspaceRepo::find_repos_with_target_branch_for_workspace(pool, parent_workspace.id)
             .await?;
+    let workspace_repos: Vec<CreateWorkspaceRepo> = parent_repos
+        .iter()
+        .map(|r| CreateWorkspaceRepo {
+            repo_id: r.repo.id,
+            target_branch: r.target_branch.clone(),
+        })
+        .collect();
+    WorkspaceRepo::create_many(pool, child_workspace.id, &workspace_repos).await?;
 
-            // Copy workspace repos from parent
-            let parent_repos = WorkspaceRepo::find_repos_with_target_branch_for_workspace(
-                pool,
-                parent_workspace.id,
-            )
-            .await?;
-            let workspace_repos: Vec<CreateWorkspaceRepo> = parent_repos
-                .iter()
-                .map(|r| CreateWorkspaceRepo {
-                    repo_id: r.repo.id,
-                    target_branch: r.target_branch.clone(),
-                })
-                .collect();
-            WorkspaceRepo::create_many(pool, child_workspace.id, &workspace_repos).await?;
-
-            // Share container ref from parent
-            if let Some(ref container_ref) = parent_workspace.container_ref {
-                Workspace::update_container_ref(pool, child_workspace.id, container_ref).await?;
-            }
-
-            // Re-fetch workspace with container_ref
-            let child_workspace = Workspace::find_by_id(pool, child_workspace.id)
-                .await?
-                .ok_or(SwarmCoordinatorError::WorkspaceNotFound(child_workspace.id))?;
-
-            // Create session
-            let session = db::models::session::Session::create(
-                pool,
-                &CreateSession {
-                    executor: Some(executor_profile_id.executor.to_string()),
-                },
-                Uuid::new_v4(),
-                child_workspace.id,
-            )
-            .await?;
-
-            let working_dir = child_workspace
-                .agent_working_dir
-                .as_ref()
-                .filter(|dir| !dir.is_empty())
-                .cloned();
-
-            let coding_action = ExecutorAction::new(
-                ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
-                    prompt,
-                    executor_profile_id: executor_profile_id.clone(),
-                    working_dir,
-                }),
-                None,
-            );
-
-            // Start the execution
-            let execution_process = container
-                .start_execution(
-                    &child_workspace,
-                    &session,
-                    &coding_action,
-                    &db::models::execution_process::ExecutionProcessRunReason::CodingAgent,
-                )
-                .await?;
-
-            // Link execution_process_id to the agent
-            SwarmAgent::update_execution_process_id(pool, agent.id, execution_process.id).await?;
-
-            // Set agent status to Running
-            SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Running).await?;
-
-            // Start context monitor for this execution
-            if let Some(msg_store) = container.get_msg_store_by_id(&execution_process.id).await {
-                let protocol_peer = container.get_protocol_peer(&execution_process.id).await;
-                start_context_monitor(
-                    pool.clone(),
-                    agent.id,
-                    execution_process.id,
-                    msg_store,
-                    agent.context_threshold,
-                    protocol_peer,
-                );
-            }
-
-            Ok(SpawnResult::AgentStarted(agent.id))
-        }
-        None => {
-            // No eligible agent. Check if all done or deadlocked.
-            if SwarmAgent::all_complete(pool, swarm_id).await? {
-                complete_swarm(pool, swarm_id).await?;
-                Ok(SpawnResult::AllComplete)
-            } else {
-                Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
-                tracing::warn!(
-                    "Swarm {} deadlocked: no eligible agents but not all complete",
-                    swarm_id
-                );
-                Ok(SpawnResult::Deadlocked)
-            }
-        }
+    // Share container ref from parent
+    if let Some(ref container_ref) = parent_workspace.container_ref {
+        Workspace::update_container_ref(pool, child_workspace.id, container_ref).await?;
     }
+
+    // Re-fetch workspace with container_ref
+    let child_workspace = Workspace::find_by_id(pool, child_workspace.id)
+        .await?
+        .ok_or(SwarmCoordinatorError::WorkspaceNotFound(child_workspace.id))?;
+
+    // Create session
+    let session = db::models::session::Session::create(
+        pool,
+        &CreateSession {
+            executor: Some(executor_profile_id.executor.to_string()),
+        },
+        Uuid::new_v4(),
+        child_workspace.id,
+    )
+    .await?;
+
+    let working_dir = child_workspace
+        .agent_working_dir
+        .as_ref()
+        .filter(|dir| !dir.is_empty())
+        .cloned();
+
+    let coding_action = ExecutorAction::new(
+        ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
+            prompt,
+            executor_profile_id: executor_profile_id.clone(),
+            working_dir,
+        }),
+        None,
+    );
+
+    // Start the execution
+    let execution_process = container
+        .start_execution(
+            &child_workspace,
+            &session,
+            &coding_action,
+            &db::models::execution_process::ExecutionProcessRunReason::CodingAgent,
+        )
+        .await?;
+
+    // Link execution_process_id to the agent
+    SwarmAgent::update_execution_process_id(pool, agent.id, execution_process.id).await?;
+
+    // Set agent status to Running
+    SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Running).await?;
+
+    // Create git branch for this agent generation (section 4.5, 7.4 — dead-end filtering)
+    let git_branch = format!("swarm/{}/gen-{}", swarm_id, agent.generation);
+    SwarmAgent::update_git_branch(pool, agent.id, &git_branch).await?;
+    create_agent_git_branch(&child_workspace, &git_branch);
+
+    // Start context monitor for this execution
+    if let Some(msg_store) = container.get_msg_store_by_id(&execution_process.id).await {
+        let protocol_peer = container.get_protocol_peer(&execution_process.id).await;
+        start_context_monitor(
+            pool.clone(),
+            agent.id,
+            execution_process.id,
+            msg_store,
+            agent.context_threshold,
+            protocol_peer,
+        );
+    }
+
+    Ok(agent.id)
 }
 
 /// Build the execution prompt for a swarm agent.
@@ -436,11 +494,62 @@ pub async fn on_agent_completed(
             swarm.id
         );
 
-        // Try to spawn the next agent
-        spawn_next_agent(pool, container, swarm.id, executor_profile_id).await?;
+        // Try to spawn all newly eligible agents
+        spawn_all_eligible_agents(pool, container, swarm.id, executor_profile_id).await?;
     }
 
     Ok(())
+}
+
+/// Extract self-assessment from MsgStore history by scanning the last assistant messages
+/// (section 3.4 Phase 1).
+async fn extract_self_assessment_from_msg_store(
+    container: &(impl ContainerService + Sync + ?Sized),
+    execution_process_id: Uuid,
+) -> String {
+    let msg_store = match container.get_msg_store_by_id(&execution_process_id).await {
+        Some(store) => store,
+        None => {
+            return "Agent hit context threshold and was instructed to wrap up.".to_string();
+        }
+    };
+
+    let history = msg_store.get_history();
+
+    // Scan history in reverse for the last AssistantMessage entries
+    let mut assessment_parts: Vec<String> = Vec::new();
+    for log_msg in history.iter().rev() {
+        if let LogMsg::JsonPatch(patch) = log_msg {
+            if let Some((_index, entry)) = extract_normalized_entry_from_patch(patch) {
+                match &entry.entry_type {
+                    NormalizedEntryType::AssistantMessage => {
+                        if !entry.content.is_empty() {
+                            assessment_parts.push(entry.content.clone());
+                            // Collect up to 3 recent assistant messages for context
+                            if assessment_parts.len() >= 3 {
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if assessment_parts.is_empty() {
+        "Agent hit context threshold and was instructed to wrap up.".to_string()
+    } else {
+        // Reverse so messages are in chronological order, then join
+        assessment_parts.reverse();
+        let combined = assessment_parts.join("\n\n---\n\n");
+        // Cap at 5K characters
+        if combined.len() > 5000 {
+            combined[..5000].to_string()
+        } else {
+            combined
+        }
+    }
 }
 
 /// Initiate a verified succession for an agent that hit its context threshold.
@@ -458,8 +567,15 @@ async fn begin_succession(
         return Err(SwarmCoordinatorError::MaxGenerationsExceeded(agent.id));
     }
 
-    // For V1, use a placeholder self-assessment
-    let self_assessment = "Agent hit context threshold and was instructed to wrap up.".to_string();
+    // Increment succession count on the agent for redecomposition heuristic
+    SwarmAgent::increment_succession_count(pool, agent.id).await?;
+
+    // Extract real self-assessment from the agent's conversation (section 3.4 Phase 1)
+    let self_assessment = if let Some(exec_id) = agent.execution_process_id {
+        extract_self_assessment_from_msg_store(container, exec_id).await
+    } else {
+        "Agent hit context threshold and was instructed to wrap up.".to_string()
+    };
 
     // Create succession record
     let succession = SwarmSuccession::create(
@@ -490,7 +606,11 @@ async fn begin_succession(
         .await
         .unwrap_or_else(|_| "(git diff panicked)".to_string());
 
-    // Run verifier (blocking I/O — spawns `claude --print`)
+    // Run verifier with configurable model (section 10.4 — hybrid model selection)
+    let verifier_model = swarm
+        .verifier_model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_VERIFIER_MODEL.to_string());
     let subtask = agent.subtask_description.clone();
     let assessment = self_assessment.clone();
     let working_dir_for_verifier = working_dir.clone();
@@ -501,6 +621,7 @@ async fn begin_succession(
             &git_diff_for_verifier,
             &assessment,
             &working_dir_for_verifier,
+            &verifier_model,
         )
     })
     .await
@@ -532,12 +653,13 @@ async fn begin_succession(
     }))
     .unwrap_or_default();
 
-    // Determine recovery strategy
-    let recovery_strategy = if report.confidence >= 0.3 {
-        "corrective"
-    } else {
-        "clean_restart"
-    };
+    // Determine recovery strategy (section 3.5)
+    // Re-fetch agent to get updated succession_count
+    let agent = SwarmAgent::find_by_id(pool, agent.id)
+        .await?
+        .ok_or(SwarmCoordinatorError::AgentNotFound(agent.id))?;
+
+    let recovery_strategy = determine_recovery_strategy(&agent, &report);
 
     // Update succession with verification results
     SwarmSuccession::update_verification(
@@ -545,49 +667,259 @@ async fn begin_succession(
         succession.id,
         &report_json,
         report.confidence,
-        recovery_strategy,
+        &recovery_strategy,
     )
     .await?;
 
-    // Create successor agent with the ORIGINAL subtask description (not the rendered prompt).
-    // Prompt enrichment with verification report happens at execution time in spawn_next_agent.
-    let successor = SwarmAgent::create(
+    // Execute recovery strategy
+    match recovery_strategy.as_str() {
+        "redecomposition" => {
+            // Section 3.5 + 3.1/3.3/4.3: Redecomposition — split into sub-swarm
+            tracing::info!(
+                "Agent {} triggering redecomposition (succession_count={}, confidence={})",
+                agent.id,
+                agent.succession_count,
+                report.confidence,
+            );
+            execute_redecomposition(pool, container, &agent, swarm, executor_profile_id).await?;
+            SwarmSuccession::update_status(
+                pool,
+                succession.id,
+                SwarmSuccessionStatus::SuccessorRunning,
+            )
+            .await?;
+        }
+        "escalation" => {
+            // Section 3.5: Escalation — mark agent as failed, report to parent
+            tracing::warn!("Agent {} escalating: external blocker detected", agent.id,);
+            SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Failed).await?;
+            SwarmSuccession::update_status(pool, succession.id, SwarmSuccessionStatus::Failed)
+                .await?;
+
+            // If this is a sub-swarm, the parent swarm will handle the failure
+            // when it detects the sub-swarm failed.
+            if swarm.parent_agent_id.is_some() {
+                Swarm::update_status(pool, swarm.id, SwarmStatus::Failed).await?;
+            }
+        }
+        _ => {
+            // Corrective or clean_restart: create a successor agent
+            let successor = SwarmAgent::create(
+                pool,
+                Uuid::new_v4(),
+                swarm.id,
+                agent.subtask_description.clone(),
+                agent.generation + 1,
+                Some(agent.id),
+                DEFAULT_CONTEXT_THRESHOLD,
+                agent.sort_order,
+            )
+            .await?;
+
+            // Link successor to succession
+            SwarmSuccession::update_successor_id(pool, succession.id, successor.id).await?;
+            SwarmSuccession::update_status(
+                pool,
+                succession.id,
+                SwarmSuccessionStatus::SuccessorRunning,
+            )
+            .await?;
+
+            tracing::info!(
+                "Created successor agent {} (gen {}) for predecessor {} in swarm {} [strategy={}]",
+                successor.id,
+                successor.generation,
+                agent.id,
+                swarm.id,
+                recovery_strategy,
+            );
+
+            // Spawn the successor
+            spawn_all_eligible_agents(pool, container, swarm.id, executor_profile_id).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Determine the recovery strategy based on agent history and verification report (section 3.5).
+fn determine_recovery_strategy(agent: &SwarmAgent, report: &VerificationReport) -> String {
+    // Check for escalation: if the report mentions external blockers
+    let has_external_blocker = report.issues.iter().any(|issue| {
+        let lower = issue.to_lowercase();
+        lower.contains("external blocker")
+            || lower.contains("blocked by")
+            || lower.contains("permission denied")
+            || lower.contains("access denied")
+            || lower.contains("authentication")
+            || lower.contains("rate limit")
+    });
+
+    if has_external_blocker {
+        return "escalation".to_string();
+    }
+
+    // Check for redecomposition: repeated succession with low progress
+    if agent.succession_count >= REDECOMPOSITION_SUCCESSION_THRESHOLD
+        && report.confidence < REDECOMPOSITION_CONFIDENCE_THRESHOLD
+    {
+        return "redecomposition".to_string();
+    }
+
+    // Standard recovery strategies
+    if report.confidence >= 0.3 {
+        "corrective".to_string()
+    } else {
+        "clean_restart".to_string()
+    }
+}
+
+/// Execute redecomposition: create a sub-swarm for the subtask (section 3.1, 3.3, 4.3).
+async fn execute_redecomposition(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    agent: &SwarmAgent,
+    parent_swarm: &Swarm,
+    executor_profile_id: &ExecutorProfileId,
+) -> Result<(), SwarmCoordinatorError> {
+    // Check depth limit before creating sub-swarm
+    if parent_swarm.depth + 1 >= parent_swarm.max_depth {
+        tracing::warn!(
+            "Cannot create sub-swarm: depth {} would exceed max_depth {}",
+            parent_swarm.depth + 1,
+            parent_swarm.max_depth,
+        );
+        // Fall back to corrective strategy
+        SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Failed).await?;
+        return Err(SwarmCoordinatorError::MaxDepthExceeded(parent_swarm.id));
+    }
+
+    spawn_sub_swarm(pool, container, agent, parent_swarm, executor_profile_id).await
+}
+
+/// Spawn a sub-swarm for an agent's subtask (section 3.1, 3.3, 4.3).
+/// Creates a new Swarm with parent_agent_id set, decomposes the subtask,
+/// creates SwarmAgent records for each sub-task, and starts execution.
+async fn spawn_sub_swarm(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    parent_agent: &SwarmAgent,
+    parent_swarm: &Swarm,
+    executor_profile_id: &ExecutorProfileId,
+) -> Result<(), SwarmCoordinatorError> {
+    let workspace = Workspace::find_by_id(pool, parent_swarm.workspace_id)
+        .await?
+        .ok_or(SwarmCoordinatorError::WorkspaceNotFound(
+            parent_swarm.workspace_id,
+        ))?;
+
+    let working_dir = if let Some(ref container_ref) = workspace.container_ref {
+        std::path::PathBuf::from(container_ref)
+    } else {
+        std::path::PathBuf::from(".")
+    };
+
+    // Decompose the subtask into smaller pieces using the existing decomposer
+    let task = Task::find_by_id(pool, parent_swarm.task_id)
+        .await?
+        .ok_or(SwarmCoordinatorError::SwarmNotFound(parent_swarm.task_id))?;
+
+    // Build a minimal spec sheet for decomposition
+    let spec = SpecSheet {
+        id: Uuid::new_v4(),
+        task_id: parent_swarm.task_id,
+        overview: Some(parent_agent.subtask_description.clone()),
+        requirements: None,
+        acceptance_criteria: None,
+        constraints: None,
+        tech_notes: Some("This subtask needs to be broken into smaller pieces because previous agents could not complete it within their context window.".to_string()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let prompt = decomposer::generate_decomposition_prompt(&spec, &task.title);
+    let working_dir_for_decompose = working_dir.clone();
+    let decomp_output = tokio::task::spawn_blocking(move || {
+        decomposer::run_decomposition(&prompt, &working_dir_for_decompose)
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(DecomposerError::ExecutionFailed(
+            "Decomposer panicked".into(),
+        ))
+    })?;
+
+    let decomp_result = decomposer::parse_decomposition_output(&decomp_output)?;
+
+    // Create the sub-swarm
+    let sub_swarm = Swarm::create(
         pool,
         Uuid::new_v4(),
-        swarm.id,
-        agent.subtask_description.clone(),
-        agent.generation + 1,
-        Some(agent.id),
-        DEFAULT_CONTEXT_THRESHOLD,
-        agent.sort_order,
+        parent_swarm.task_id,
+        parent_swarm.workspace_id,
+        Some(parent_agent.id), // Link to parent agent
+        parent_swarm.depth + 1,
+        parent_swarm.max_depth,
+        parent_swarm.routing_decision.clone(),
     )
     .await?;
 
-    // Link successor to succession
-    SwarmSuccession::update_successor_id(pool, succession.id, successor.id).await?;
-    SwarmSuccession::update_status(pool, succession.id, SwarmSuccessionStatus::SuccessorRunning)
+    // Create SwarmAgent records for each decomposed story
+    let mut story_id_to_agent_id: std::collections::HashMap<String, Uuid> =
+        std::collections::HashMap::new();
+
+    for (i, story) in decomp_result.stories.iter().enumerate() {
+        let subtask = format!("{}\n\n{}", story.title, story.description);
+        let agent = SwarmAgent::create(
+            pool,
+            Uuid::new_v4(),
+            sub_swarm.id,
+            subtask,
+            0,
+            None,
+            DEFAULT_CONTEXT_THRESHOLD,
+            i as i64,
+        )
         .await?;
+        story_id_to_agent_id.insert(story.id.clone(), agent.id);
+    }
+
+    // Wire up dependencies from decomposition
+    for story in &decomp_result.stories {
+        let agent_id = story_id_to_agent_id[&story.id];
+        let dep_agent_ids: Vec<Uuid> = story
+            .depends_on
+            .iter()
+            .filter_map(|dep_id| story_id_to_agent_id.get(dep_id).copied())
+            .collect();
+        if !dep_agent_ids.is_empty() {
+            SwarmAgentDependency::create_batch(pool, agent_id, &dep_agent_ids).await?;
+        }
+    }
+
+    // Start the sub-swarm
+    Swarm::update_status(pool, sub_swarm.id, SwarmStatus::Running).await?;
+    spawn_all_eligible_agents(pool, container, sub_swarm.id, executor_profile_id).await?;
 
     tracing::info!(
-        "Created successor agent {} (gen {}) for predecessor {} in swarm {}",
-        successor.id,
-        successor.generation,
-        agent.id,
-        swarm.id
+        "Spawned sub-swarm {} (depth {}) for agent {} with {} sub-agents",
+        sub_swarm.id,
+        sub_swarm.depth,
+        parent_agent.id,
+        decomp_result.stories.len(),
     );
-
-    // Spawn the successor (find_next_eligible will pick it up since it's pending)
-    spawn_next_agent(pool, container, swarm.id, executor_profile_id).await?;
 
     Ok(())
 }
 
 /// Run the verifier using `claude --print` to evaluate the predecessor's work.
+/// Accepts a model parameter for hybrid model selection (section 10.4).
 fn run_verifier(
     subtask: &str,
     git_diff: &str,
     self_assessment: &str,
     working_dir: &Path,
+    model: &str,
 ) -> Result<VerificationReport, SwarmCoordinatorError> {
     let prompt = format!(
         r#"You are a code verification agent. Evaluate the work done on a subtask.
@@ -609,13 +941,19 @@ Evaluate what was actually completed vs what was claimed. Respond with ONLY a JS
 The confidence score should reflect how much of the subtask was successfully completed (1.0 = fully done, 0.0 = nothing done)."#
     );
 
-    let output = std::process::Command::new("claude")
-        .args(["--print", "-p", &prompt])
-        .current_dir(working_dir)
-        .output()
-        .map_err(|e| {
-            SwarmCoordinatorError::VerifierFailed(format!("Failed to spawn claude: {e}"))
-        })?;
+    let mut cmd = std::process::Command::new("claude");
+    cmd.args(["--print", "-p", &prompt]);
+
+    // Apply model selection (section 10.4)
+    if model != DEFAULT_VERIFIER_MODEL {
+        cmd.args(["--model", model]);
+    } else {
+        cmd.args(["--model", DEFAULT_VERIFIER_MODEL]);
+    }
+
+    let output = cmd.current_dir(working_dir).output().map_err(|e| {
+        SwarmCoordinatorError::VerifierFailed(format!("Failed to spawn claude: {e}"))
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -659,8 +997,12 @@ fn parse_verification_output(output: &str) -> Result<VerificationReport, SwarmCo
     })
 }
 
-/// Mark a swarm as completed and handle any parent linkage.
-async fn complete_swarm(pool: &SqlitePool, swarm_id: Uuid) -> Result<(), SwarmCoordinatorError> {
+/// Mark a swarm as completed and handle any parent linkage (section 3.6).
+async fn complete_swarm(
+    pool: &SqlitePool,
+    container: &(impl ContainerService + Sync + ?Sized),
+    swarm_id: Uuid,
+) -> Result<(), SwarmCoordinatorError> {
     let swarm = Swarm::find_by_id(pool, swarm_id)
         .await?
         .ok_or(SwarmCoordinatorError::SwarmNotFound(swarm_id))?;
@@ -669,12 +1011,116 @@ async fn complete_swarm(pool: &SqlitePool, swarm_id: Uuid) -> Result<(), SwarmCo
 
     tracing::info!("Swarm {} completed", swarm_id);
 
-    // If root swarm, transition parent task to QA
-    if swarm.parent_agent_id.is_none() {
+    if let Some(parent_agent_id) = swarm.parent_agent_id {
+        // Sub-swarm completed (section 3.6): mark the parent agent as completed
+        // and advance the parent swarm.
+        SwarmAgent::update_status(pool, parent_agent_id, SwarmAgentStatus::Completed).await?;
+
+        let parent_agent = SwarmAgent::find_by_id(pool, parent_agent_id)
+            .await?
+            .ok_or(SwarmCoordinatorError::AgentNotFound(parent_agent_id))?;
+
+        tracing::info!(
+            "Sub-swarm {} completed, advancing parent swarm {}",
+            swarm_id,
+            parent_agent.swarm_id,
+        );
+
+        // Run aggregation check for sub-swarm results
+        let workspace = Workspace::find_by_id(pool, swarm.workspace_id)
+            .await?
+            .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
+
+        run_aggregation_check(pool, &swarm, &workspace).await;
+
+        // Advance the parent swarm — use a dummy profile since we need one
+        // to spawn agents. In practice, the executor profile is carried forward.
+        // For now we just check if more agents are eligible in the parent swarm.
+        let parent_swarm = Swarm::find_by_id(pool, parent_agent.swarm_id)
+            .await?
+            .ok_or(SwarmCoordinatorError::SwarmNotFound(parent_agent.swarm_id))?;
+
+        // Check if all parent swarm agents are complete
+        if SwarmAgent::all_complete(pool, parent_swarm.id).await? {
+            // Recursively complete the parent swarm
+            Box::pin(complete_swarm(pool, container, parent_swarm.id)).await?;
+        }
+    } else {
+        // Root swarm: run final aggregation and transition parent task to QA
+        let workspace = Workspace::find_by_id(pool, swarm.workspace_id)
+            .await?
+            .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
+
+        run_aggregation_check(pool, &swarm, &workspace).await;
+
         super::ralph_loop::complete_ralph_loop(pool, swarm.task_id).await?;
     }
 
     Ok(())
+}
+
+/// Run an aggregation check to verify completeness of all child agents' work (section 3.6).
+async fn run_aggregation_check(pool: &SqlitePool, swarm: &Swarm, workspace: &Workspace) {
+    let working_dir = if let Some(ref container_ref) = workspace.container_ref {
+        std::path::PathBuf::from(container_ref)
+    } else {
+        std::path::PathBuf::from(".")
+    };
+
+    let agents = match SwarmAgent::find_by_swarm_id(pool, swarm.id).await {
+        Ok(agents) => agents,
+        Err(e) => {
+            tracing::warn!("Failed to fetch agents for aggregation check: {}", e);
+            return;
+        }
+    };
+
+    let agent_summaries: Vec<String> = agents
+        .iter()
+        .filter(|a| a.status == SwarmAgentStatus::Completed)
+        .enumerate()
+        .map(|(i, a)| {
+            format!(
+                "Agent {} (gen {}): {}",
+                i + 1,
+                a.generation,
+                a.subtask_description.chars().take(200).collect::<String>()
+            )
+        })
+        .collect();
+
+    if agent_summaries.is_empty() {
+        return;
+    }
+
+    let task = match Task::find_by_id(pool, swarm.task_id).await {
+        Ok(Some(t)) => t,
+        _ => return,
+    };
+
+    let prompt = format!(
+        "You are a result aggregation agent. Verify that the following agents' work \
+         covers the original task.\n\n\
+         ## Original Task\n{}\n\n\
+         ## Agent Work Summary\n{}\n\n\
+         ## Git Diff\n{}\n\n\
+         Respond with a brief assessment of completeness.",
+        task.title,
+        agent_summaries.join("\n"),
+        "(see working directory)",
+    );
+
+    let working_dir_clone = working_dir.clone();
+    let _result = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("claude")
+            .args(["--print", "-p", &prompt, "--model", DEFAULT_VERIFIER_MODEL])
+            .current_dir(&working_dir_clone)
+            .output()
+    })
+    .await;
+
+    // Aggregation is best-effort; we log but don't block completion
+    tracing::info!("Aggregation check completed for swarm {}", swarm.id);
 }
 
 /// Get a summary of git changes in the working directory (best-effort).
@@ -694,6 +1140,41 @@ fn get_git_diff_summary(working_dir: &Path) -> String {
             }
         }
         _ => "(git diff unavailable)".to_string(),
+    }
+}
+
+/// Create a git branch for agent generation isolation (section 4.5, 7.4).
+fn create_agent_git_branch(workspace: &Workspace, branch_name: &str) {
+    let working_dir = if let Some(ref container_ref) = workspace.container_ref {
+        std::path::PathBuf::from(container_ref)
+    } else {
+        return;
+    };
+
+    let result = std::process::Command::new("git")
+        .args(["checkout", "-b", branch_name])
+        .current_dir(&working_dir)
+        .output();
+
+    match result {
+        Ok(out) if out.status.success() => {
+            tracing::debug!("Created git branch {} for agent", branch_name);
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // Branch might already exist, try switching to it
+            if stderr.contains("already exists") {
+                let _ = std::process::Command::new("git")
+                    .args(["checkout", branch_name])
+                    .current_dir(&working_dir)
+                    .output();
+            } else {
+                tracing::warn!("Failed to create git branch {}: {}", branch_name, stderr);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to run git for branch {}: {}", branch_name, e);
+        }
     }
 }
 
@@ -825,5 +1306,79 @@ mod tests {
         let output = "Here is my evaluation:\n{\"completed\": [\"done\"], \"issues\": [], \"remaining\": [], \"confidence\": 0.9}\nThat's all.";
         let report = parse_verification_output(output).unwrap();
         assert_eq!(report.completed, vec!["done"]);
+    }
+
+    #[test]
+    fn test_determine_recovery_strategy_corrective() {
+        let agent = make_test_agent(0);
+        let report = VerificationReport {
+            completed: vec!["step 1".into()],
+            issues: vec![],
+            remaining: vec!["step 2".into()],
+            confidence: 0.6,
+        };
+        assert_eq!(determine_recovery_strategy(&agent, &report), "corrective");
+    }
+
+    #[test]
+    fn test_determine_recovery_strategy_clean_restart() {
+        let agent = make_test_agent(0);
+        let report = VerificationReport {
+            completed: vec![],
+            issues: vec!["nothing worked".into()],
+            remaining: vec!["everything".into()],
+            confidence: 0.1,
+        };
+        assert_eq!(
+            determine_recovery_strategy(&agent, &report),
+            "clean_restart"
+        );
+    }
+
+    #[test]
+    fn test_determine_recovery_strategy_redecomposition() {
+        let agent = make_test_agent(2); // 2 successions
+        let report = VerificationReport {
+            completed: vec![],
+            issues: vec!["task too large".into()],
+            remaining: vec!["most of it".into()],
+            confidence: 0.3, // below threshold
+        };
+        assert_eq!(
+            determine_recovery_strategy(&agent, &report),
+            "redecomposition"
+        );
+    }
+
+    #[test]
+    fn test_determine_recovery_strategy_escalation() {
+        let agent = make_test_agent(0);
+        let report = VerificationReport {
+            completed: vec![],
+            issues: vec!["External blocker: API key missing".into()],
+            remaining: vec!["everything".into()],
+            confidence: 0.0,
+        };
+        assert_eq!(determine_recovery_strategy(&agent, &report), "escalation");
+    }
+
+    fn make_test_agent(succession_count: i64) -> SwarmAgent {
+        SwarmAgent {
+            id: Uuid::new_v4(),
+            swarm_id: Uuid::new_v4(),
+            execution_process_id: None,
+            subtask_description: "test task".to_string(),
+            generation: 1,
+            predecessor_id: None,
+            status: SwarmAgentStatus::Threshold,
+            context_tokens_used: None,
+            context_window_size: None,
+            context_threshold: 0.6,
+            sort_order: 0,
+            git_branch: None,
+            succession_count,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
     }
 }

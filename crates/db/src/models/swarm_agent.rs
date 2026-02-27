@@ -33,6 +33,8 @@ pub struct SwarmAgent {
     pub context_window_size: Option<i64>,
     pub context_threshold: f64,
     pub sort_order: i64,
+    pub git_branch: Option<String>,
+    pub succession_count: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -62,6 +64,8 @@ impl SwarmAgent {
                          context_window_size as "context_window_size: i64",
                          context_threshold as "context_threshold!: f64",
                          sort_order as "sort_order!: i64",
+                         git_branch,
+                         succession_count as "succession_count!: i64",
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -89,6 +93,8 @@ impl SwarmAgent {
                       context_window_size as "context_window_size: i64",
                       context_threshold as "context_threshold!: f64",
                       sort_order as "sort_order!: i64",
+                      git_branch,
+                      succession_count as "succession_count!: i64",
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarm_agents
@@ -114,6 +120,8 @@ impl SwarmAgent {
                       context_window_size as "context_window_size: i64",
                       context_threshold as "context_threshold!: f64",
                       sort_order as "sort_order!: i64",
+                      git_branch,
+                      succession_count as "succession_count!: i64",
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarm_agents
@@ -137,6 +145,8 @@ impl SwarmAgent {
                       context_window_size as "context_window_size: i64",
                       context_threshold as "context_threshold!: f64",
                       sort_order as "sort_order!: i64",
+                      git_branch,
+                      succession_count as "succession_count!: i64",
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarm_agents
@@ -162,6 +172,8 @@ impl SwarmAgent {
                       context_window_size as "context_window_size: i64",
                       context_threshold as "context_threshold!: f64",
                       sort_order as "sort_order!: i64",
+                      git_branch,
+                      succession_count as "succession_count!: i64",
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarm_agents
@@ -188,6 +200,8 @@ impl SwarmAgent {
                       sa.context_window_size as "context_window_size: i64",
                       sa.context_threshold as "context_threshold!: f64",
                       sa.sort_order as "sort_order!: i64",
+                      sa.git_branch,
+                      sa.succession_count as "succession_count!: i64",
                       sa.created_at as "created_at!: DateTime<Utc>",
                       sa.updated_at as "updated_at!: DateTime<Utc>"
                FROM swarm_agents sa
@@ -202,6 +216,41 @@ impl SwarmAgent {
             swarm_id,
         )
         .fetch_optional(pool)
+        .await
+    }
+
+    /// Find ALL eligible agents in a swarm: status='pending' with all dependencies completed.
+    /// Used for concurrent top-level agent spawning (section 3.2.1).
+    pub async fn find_all_eligible(
+        pool: &SqlitePool,
+        swarm_id: Uuid,
+    ) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            SwarmAgent,
+            r#"SELECT sa.id as "id!: Uuid", sa.swarm_id as "swarm_id!: Uuid",
+                      sa.execution_process_id as "execution_process_id: Uuid",
+                      sa.subtask_description, sa.generation as "generation!: i64",
+                      sa.predecessor_id as "predecessor_id: Uuid",
+                      sa.status as "status!: SwarmAgentStatus",
+                      sa.context_tokens_used as "context_tokens_used: i64",
+                      sa.context_window_size as "context_window_size: i64",
+                      sa.context_threshold as "context_threshold!: f64",
+                      sa.sort_order as "sort_order!: i64",
+                      sa.git_branch,
+                      sa.succession_count as "succession_count!: i64",
+                      sa.created_at as "created_at!: DateTime<Utc>",
+                      sa.updated_at as "updated_at!: DateTime<Utc>"
+               FROM swarm_agents sa
+               WHERE sa.swarm_id = $1 AND sa.status = 'pending'
+               AND NOT EXISTS (
+                   SELECT 1 FROM swarm_agent_dependencies sad
+                   JOIN swarm_agents dep ON dep.id = sad.depends_on_agent_id
+                   WHERE sad.agent_id = sa.id AND dep.status != 'completed'
+               )
+               ORDER BY sa.sort_order ASC, sa.created_at ASC"#,
+            swarm_id,
+        )
+        .fetch_all(pool)
         .await
     }
 
@@ -259,6 +308,34 @@ impl SwarmAgent {
             "UPDATE swarm_agents SET execution_process_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
             id,
             execution_process_id,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_git_branch(
+        pool: &SqlitePool,
+        id: Uuid,
+        git_branch: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE swarm_agents SET git_branch = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            git_branch,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn increment_succession_count(
+        pool: &SqlitePool,
+        id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE swarm_agents SET succession_count = succession_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
         )
         .execute(pool)
         .await?;
