@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) as \"total!: i64\",\n                      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as \"done!: i64\"\n               FROM swarm_agents\n               WHERE swarm_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "total!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "done!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "34ca4db7524e0e8434d732f3e186987cd07a6899be3c17edb125233eae54edbf"
+}

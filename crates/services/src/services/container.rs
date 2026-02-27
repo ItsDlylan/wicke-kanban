@@ -36,7 +36,7 @@ use executors::{
         coding_agent_initial::CodingAgentInitialRequest,
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
-    executors::{ExecutorError, StandardCodingAgentExecutor},
+    executors::{ExecutorError, ProtocolPeer, StandardCodingAgentExecutor},
     logs::{
         NormalizedEntry, NormalizedEntryError, NormalizedEntryType,
         utils::{
@@ -356,6 +356,38 @@ pub trait ContainerService {
     /// For Ralph loop children, this advances the orchestration loop instead.
     async fn finalize_task(&self, ctx: &ExecutionContext) {
         let pool = &self.db().pool;
+
+        // Check if this execution belongs to a VS swarm agent
+        if let Ok(Some(_swarm_agent)) =
+            db::models::swarm_agent::SwarmAgent::find_by_execution_process_id(
+                pool,
+                ctx.execution_process.id,
+            )
+            .await
+        {
+            let executor_profile_id =
+                match ExecutionProcess::latest_executor_profile_for_session(pool, ctx.session.id)
+                    .await
+                {
+                    Ok(Some(profile)) => profile,
+                    _ => executors::profile::ExecutorProfileId::new(
+                        executors::executors::BaseCodingAgent::ClaudeCode,
+                    ),
+                };
+
+            if let Err(e) = super::swarm_coordinator::on_agent_completed(
+                pool,
+                self,
+                ctx.execution_process.id,
+                &executor_profile_id,
+            )
+            .await
+            {
+                tracing::error!("Failed to handle swarm agent completion: {e}");
+                // Fall through — don't block finalization
+            }
+            return;
+        }
 
         // Check if this is a Ralph loop child task
         if let Some(parent_workspace_id) = ctx.task.parent_workspace_id {
@@ -1422,6 +1454,39 @@ pub trait ContainerService {
             .await?
             .ok_or(SqlxError::RowNotFound)?;
 
+        // Check if task should be routed to swarm execution
+        if let Some(ref routing) = task.routing_decision {
+            if routing == "vs_shallow" || routing == "vs_deep" {
+                use db::models::swarm_agent::SwarmAgent;
+
+                use super::swarm_coordinator;
+
+                let swarm = swarm_coordinator::start_swarm(
+                    &self.db().pool,
+                    self,
+                    &task,
+                    &workspace,
+                    Some(routing.clone()),
+                    &executor_profile_id,
+                )
+                .await
+                .map_err(|e| ContainerError::Other(anyhow!("Swarm start failed: {e}")))?;
+
+                // Return the first running agent's execution process
+                let agents = SwarmAgent::find_by_swarm_id(&self.db().pool, swarm.id).await?;
+                if let Some(exec_id) = agents.iter().find_map(|a| a.execution_process_id) {
+                    let ep = ExecutionProcess::find_by_id(&self.db().pool, exec_id)
+                        .await?
+                        .ok_or(SqlxError::RowNotFound)?;
+                    return Ok(ep);
+                }
+                return Err(ContainerError::Other(anyhow!(
+                    "Swarm started but no agent execution process found"
+                )));
+            }
+            // single_verifier or other routing: falls through to normal single-agent
+        }
+
         // Create a session for this workspace
         let session = Session::create(
             &self.db().pool,
@@ -1739,5 +1804,23 @@ pub trait ContainerService {
 
         tracing::debug!("Started next action: {:?}", next_action);
         Ok(())
+    }
+
+    /// Get the protocol peer for a running execution process.
+    /// Default implementation returns None; overridden by LocalContainerService.
+    async fn get_protocol_peer(&self, _execution_process_id: &Uuid) -> Option<ProtocolPeer> {
+        None
+    }
+
+    /// Send a message to a running agent via the control protocol.
+    /// Default implementation returns an error; overridden by LocalContainerService.
+    async fn send_message_to_agent(
+        &self,
+        _execution_process_id: Uuid,
+        _message: String,
+    ) -> Result<(), ContainerError> {
+        Err(ContainerError::Other(anyhow!(
+            "send_message_to_agent not supported"
+        )))
     }
 }

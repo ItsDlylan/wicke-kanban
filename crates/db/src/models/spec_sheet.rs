@@ -116,6 +116,21 @@ impl SpecSheet {
         }
     }
 
+    pub async fn update_complexity_score(
+        pool: &SqlitePool,
+        id: Uuid,
+        score: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE spec_sheets SET complexity_score = $2 WHERE id = $1",
+            id,
+            score
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn delete_by_task_id(pool: &SqlitePool, task_id: Uuid) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!("DELETE FROM spec_sheets WHERE task_id = $1", task_id)
             .execute(pool)

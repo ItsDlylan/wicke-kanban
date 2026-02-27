@@ -36,7 +36,9 @@ use executors::{
     },
     approvals::{ExecutorApprovalService, NoopExecutorApprovalService},
     env::{ExecutionEnv, RepoContext},
-    executors::{BaseCodingAgent, CancellationToken, ExecutorExitResult, ExecutorExitSignal},
+    executors::{
+        BaseCodingAgent, CancellationToken, ExecutorExitResult, ExecutorExitSignal, ProtocolPeer,
+    },
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
 };
 use futures::{FutureExt, TryStreamExt, stream::select};
@@ -84,6 +86,7 @@ pub struct LocalContainerService {
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
     notification_service: NotificationService,
+    protocol_peers: Arc<RwLock<HashMap<Uuid, ProtocolPeer>>>,
 }
 
 impl LocalContainerService {
@@ -105,6 +108,8 @@ impl LocalContainerService {
         let workspace_touch_times = Arc::new(RwLock::new(HashMap::new()));
         let notification_service = NotificationService::new(config.clone());
 
+        let protocol_peers = Arc::new(RwLock::new(HashMap::new()));
+
         let container = LocalContainerService {
             db,
             child_store,
@@ -120,6 +125,7 @@ impl LocalContainerService {
             approvals,
             queued_message_service,
             notification_service,
+            protocol_peers,
         };
 
         container.spawn_workspace_cleanup();
@@ -170,6 +176,24 @@ impl LocalContainerService {
     async fn take_exit_monitor_handle(&self, id: &Uuid) -> Option<JoinHandle<()>> {
         let mut map = self.exit_monitor_handles.write().await;
         map.remove(id)
+    }
+
+    pub async fn get_protocol_peer(&self, exec_id: Uuid) -> Option<ProtocolPeer> {
+        self.protocol_peers.read().await.get(&exec_id).cloned()
+    }
+
+    pub async fn send_message_to_agent(
+        &self,
+        exec_id: Uuid,
+        message: String,
+    ) -> Result<(), ContainerError> {
+        let peer = self.get_protocol_peer(exec_id).await.ok_or_else(|| {
+            ContainerError::Other(anyhow!("No protocol peer for execution {exec_id}"))
+        })?;
+        peer.send_user_message(message)
+            .await
+            .map_err(|e| ContainerError::Other(anyhow!("Failed to send message to agent: {e}")))?;
+        Ok(())
     }
 
     pub async fn cleanup_workspace(db: &DBService, workspace: &Workspace) {
@@ -622,8 +646,9 @@ impl LocalContainerService {
                 let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
             }
 
-            // Cleanup child handle
+            // Cleanup child handle and protocol peer
             child_store.write().await.remove(&exec_id);
+            container.protocol_peers.write().await.remove(&exec_id);
         })
     }
 
@@ -1253,6 +1278,14 @@ impl ContainerService for LocalContainerService {
                 .await;
         }
 
+        // Store protocol peer for message injection (VS swarm support)
+        if let Some(peer) = spawned.protocol_peer {
+            self.protocol_peers
+                .write()
+                .await
+                .insert(execution_process.id, peer);
+        }
+
         // Spawn unified exit monitor: watches OS exit and optional executor signal
         let hn = self.spawn_exit_monitor(&execution_process.id, spawned.exit_signal);
         self.add_exit_monitor_handle(execution_process.id, hn).await;
@@ -1313,6 +1346,12 @@ impl ContainerService for LocalContainerService {
             }
         }
         self.remove_child_from_store(&execution_process.id).await;
+
+        // Remove protocol peer
+        self.protocol_peers
+            .write()
+            .await
+            .remove(&execution_process.id);
 
         // Mark the process finished in the MsgStore and wait for DB persistence
         let db_stream_handle = self.take_db_stream_handle(&execution_process.id).await;
@@ -1499,6 +1538,22 @@ impl ContainerService for LocalContainerService {
         }
 
         Ok(())
+    }
+
+    async fn get_protocol_peer(&self, execution_process_id: &Uuid) -> Option<ProtocolPeer> {
+        self.protocol_peers
+            .read()
+            .await
+            .get(execution_process_id)
+            .cloned()
+    }
+
+    async fn send_message_to_agent(
+        &self,
+        execution_process_id: Uuid,
+        message: String,
+    ) -> Result<(), ContainerError> {
+        LocalContainerService::send_message_to_agent(self, execution_process_id, message).await
     }
 }
 fn success_exit_status() -> std::process::ExitStatus {

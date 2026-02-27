@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\", swarm_id as \"swarm_id!: Uuid\",\n                      predecessor_id as \"predecessor_id!: Uuid\",\n                      verifier_execution_id as \"verifier_execution_id: Uuid\",\n                      successor_id as \"successor_id: Uuid\",\n                      predecessor_self_assessment,\n                      verification_report,\n                      verifier_confidence as \"verifier_confidence: f64\",\n                      recovery_strategy,\n                      status as \"status!: SwarmSuccessionStatus\",\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarm_successions\n               WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "swarm_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "predecessor_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "verifier_execution_id: Uuid",
+        "ordinal": 3,
+        "type_info": "Blob"
+      },
+      {
+        "name": "successor_id: Uuid",
+        "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "predecessor_self_assessment",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "verification_report",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "verifier_confidence: f64",
+        "ordinal": 7,
+        "type_info": "Float"
+      },
+      {
+        "name": "recovery_strategy",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!: SwarmSuccessionStatus",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 11,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "40e91bfca61bea1db56e7b4bb7af323593eb72b93d96aed65a805c0eed7c9e28"
+}

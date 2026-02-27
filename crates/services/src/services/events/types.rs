@@ -32,6 +32,12 @@ pub enum HookTables {
     Scratch,
     #[strum(to_string = "projects")]
     Projects,
+    #[strum(to_string = "swarms")]
+    Swarms,
+    #[strum(to_string = "swarm_agents")]
+    SwarmAgents,
+    #[strum(to_string = "swarm_successions")]
+    SwarmSuccessions,
 }
 
 #[derive(Serialize, Deserialize, TS)]

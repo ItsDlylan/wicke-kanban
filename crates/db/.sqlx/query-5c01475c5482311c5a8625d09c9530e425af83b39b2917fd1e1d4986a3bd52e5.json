@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO swarm_agent_dependencies (agent_id, depends_on_agent_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "5c01475c5482311c5a8625d09c9530e425af83b39b2917fd1e1d4986a3bd52e5"
+}

@@ -9,7 +9,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-export type LayoutMode = 'preview' | 'diffs' | null;
+export type LayoutMode = 'preview' | 'diffs' | 'swarm' | null;
 
 interface TasksLayoutProps {
   kanban: ReactNode;
@@ -127,7 +127,13 @@ function RightWorkArea({
               minSize={MIN_PANEL_SIZE}
               className="min-w-0 min-h-0 overflow-hidden"
               role="region"
-              aria-label={mode === 'preview' ? 'Preview' : 'Diffs'}
+              aria-label={
+                mode === 'preview'
+                  ? 'Preview'
+                  : mode === 'swarm'
+                    ? 'Swarm'
+                    : 'Diffs'
+              }
             >
               <AuxRouter mode={mode} aux={aux} />
             </Panel>

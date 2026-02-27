@@ -42,9 +42,9 @@ export type TaskStatus = "backlog" | "plangenerating" | "ready" | "ralph" | "inp
 
 export type TaskType = "task" | "epic";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, created_at: string, updated_at: string, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, routing_decision: string | null, created_at: string, updated_at: string, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, has_spec: boolean, has_children: boolean, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, created_at: string, updated_at: string, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, has_spec: boolean, has_children: boolean, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, routing_decision: string | null, created_at: string, updated_at: string, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
@@ -320,7 +320,7 @@ export type CreateTaskAttemptBody = { task_id: string, executor_profile_id: Exec
 
 export type WorkspaceRepoInput = { repo_id: string, target_branch: string, };
 
-export type ChildTaskWithDeps = { dependencies: Array<string>, is_ready: boolean, sprint_workspace_id: string | null, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, created_at: string, updated_at: string, };
+export type ChildTaskWithDeps = { dependencies: Array<string>, is_ready: boolean, sprint_workspace_id: string | null, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, task_type: TaskType, parent_workspace_id: string | null, parent_task_id: string | null, sort_order: number, plan: string | null, plan_status: string | null, is_human: boolean, routing_decision: string | null, created_at: string, updated_at: string, };
 
 export type SprintRepoInput = { repo_id: string, target_branch: string, };
 
@@ -652,6 +652,32 @@ export type ToolStatus = { "status": "created" } | { "status": "success" } | { "
 export type PatchType = { "type": "NORMALIZED_ENTRY", "content": NormalizedEntry } | { "type": "STDOUT", "content": string } | { "type": "STDERR", "content": string } | { "type": "DIFF", "content": Diff };
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]?: JsonValue } | null;
+
+export type Swarm = { id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type RoutingDecision = "single" | "single_verifier" | "vs_shallow" | "vs_deep";
+
+export type SwarmAgent = { id: string, swarm_id: string, execution_process_id: string | null, subtask_description: string, generation: bigint, predecessor_id: string | null, status: SwarmAgentStatus, context_tokens_used: bigint | null, context_window_size: bigint | null, context_threshold: number, sort_order: bigint, created_at: string, updated_at: string, };
+
+export type SwarmAgentStatus = "pending" | "running" | "completed" | "failed" | "threshold";
+
+export type SwarmSuccession = { id: string, swarm_id: string, predecessor_id: string, verifier_execution_id: string | null, successor_id: string | null, predecessor_self_assessment: string | null, verification_report: string | null, verifier_confidence: number | null, recovery_strategy: string | null, status: SwarmSuccessionStatus, created_at: string, updated_at: string, };
+
+export type SwarmSuccessionStatus = "pending" | "verifying" | "verified" | "successor_running" | "failed";
+
+export type RecoveryStrategy = "corrective" | "clean_restart" | "redecomposition" | "escalation";
+
+export type SpecAssessment = { complexity_score: number, files_estimated: number, subsystems: Array<string>, context_estimate: number, decomposability: string, recommended: string, confidence: number, };
+
+export type SwarmWithAgents = { agents: Array<SwarmAgent>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmOverview = { agents: Array<SwarmAgent>, successions: Array<SwarmSuccession>, dependencies: Array<SwarmAgentDependency>, id: string, task_id: string, workspace_id: string, parent_agent_id: string | null, status: SwarmStatus, depth: bigint, max_depth: bigint, routing_decision: string | null, created_at: string, updated_at: string, };
+
+export type SwarmSummary = { id: string, status: string, routing_decision: string | null, created_at: string, updated_at: string, agent_count: bigint, };
+
+export type SwarmAgentDependency = { agent_id: string, depends_on_agent_id: string, };
 
 export type ClaudeUsageData = { configured: boolean, usage: JsonValue | null, last_updated_at: string | null, error: string | null, };
 

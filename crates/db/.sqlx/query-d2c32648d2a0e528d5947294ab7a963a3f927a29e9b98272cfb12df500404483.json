@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE spec_sheets SET complexity_score = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d2c32648d2a0e528d5947294ab7a963a3f927a29e9b98272cfb12df500404483"
+}

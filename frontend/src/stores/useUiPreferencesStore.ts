@@ -7,6 +7,7 @@ export const RIGHT_MAIN_PANEL_MODES = {
   CHANGES: 'changes',
   LOGS: 'logs',
   PREVIEW: 'preview',
+  SWARM: 'swarm',
 } as const;
 
 export type RightMainPanelMode =
@@ -260,7 +261,8 @@ export type PersistKey =
   | `system:${string}`
   | `error:${string}`
   | `entry:${string}`
-  | `list-section-${string}`;
+  | `list-section-${string}`
+  | `swarm:${string}`;
 
 type State = {
   // UI preferences

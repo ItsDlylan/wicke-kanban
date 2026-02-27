@@ -2,6 +2,10 @@ use db::models::{
     execution_process::ExecutionProcess,
     project::Project,
     scratch::Scratch,
+    swarm::Swarm,
+    swarm_agent::SwarmAgent,
+    swarm_agent_dependency::SwarmAgentDependency,
+    swarm_succession::SwarmSuccession,
     task::{Task, TaskWithAttemptStatus},
     workspace::Workspace,
 };
@@ -518,6 +522,105 @@ impl EventService {
                 }
             },
         );
+
+        let initial_stream = futures::stream::iter(vec![Ok(initial_msg), Ok(LogMsg::Ready)]);
+        Ok(initial_stream.chain(filtered_stream).boxed())
+    }
+
+    /// Stream swarm overview for a specific task with initial snapshot
+    pub async fn stream_swarm_overview_raw(
+        &self,
+        task_id: Uuid,
+    ) -> Result<futures::stream::BoxStream<'static, Result<LogMsg, std::io::Error>>, EventError>
+    {
+        // Build initial snapshot
+        let initial_value = if let Some(swarm) =
+            Swarm::find_active_by_task_id(&self.db.pool, task_id).await?
+        {
+            let agents = SwarmAgent::find_by_swarm_id(&self.db.pool, swarm.id).await?;
+            let successions = SwarmSuccession::find_by_swarm_id(&self.db.pool, swarm.id).await?;
+            let dependencies =
+                SwarmAgentDependency::find_by_swarm_agents(&self.db.pool, swarm.id).await?;
+            let mut overview = serde_json::to_value(&swarm).unwrap_or_default();
+            if let Some(obj) = overview.as_object_mut() {
+                obj.insert(
+                    "agents".to_string(),
+                    serde_json::to_value(&agents).unwrap_or_default(),
+                );
+                obj.insert(
+                    "successions".to_string(),
+                    serde_json::to_value(&successions).unwrap_or_default(),
+                );
+                obj.insert(
+                    "dependencies".to_string(),
+                    serde_json::to_value(&dependencies).unwrap_or_default(),
+                );
+            }
+            overview
+        } else {
+            serde_json::Value::Null
+        };
+
+        let initial_patch = json!([{
+            "op": "replace",
+            "path": "/swarm_overview",
+            "value": initial_value
+        }]);
+        let initial_msg = LogMsg::JsonPatch(serde_json::from_value(initial_patch).unwrap());
+
+        let task_id_str = task_id.to_string();
+        let path_prefix = format!("/swarm_overview/{}", task_id_str);
+
+        let filtered_stream =
+            BroadcastStream::new(self.msg_store.get_receiver()).filter_map(move |msg_result| {
+                let path_prefix = path_prefix.clone();
+                async move {
+                    match msg_result {
+                        Ok(LogMsg::JsonPatch(patch)) => {
+                            if let Some(op) = patch.0.first()
+                                && op.path().starts_with(&path_prefix)
+                            {
+                                // Rewrite path from /swarm_overview/{task_id} to /swarm_overview
+                                // for the client
+                                match op {
+                                    json_patch::PatchOperation::Replace(r) => {
+                                        let rewritten = json_patch::Patch(vec![
+                                            json_patch::PatchOperation::Replace(
+                                                json_patch::ReplaceOperation {
+                                                    path: "/swarm_overview"
+                                                        .try_into()
+                                                        .expect("path should be valid"),
+                                                    value: r.value.clone(),
+                                                },
+                                            ),
+                                        ]);
+                                        return Some(Ok(LogMsg::JsonPatch(rewritten)));
+                                    }
+                                    json_patch::PatchOperation::Remove(_) => {
+                                        let rewritten = json_patch::Patch(vec![
+                                            json_patch::PatchOperation::Replace(
+                                                json_patch::ReplaceOperation {
+                                                    path: "/swarm_overview"
+                                                        .try_into()
+                                                        .expect("path should be valid"),
+                                                    value: serde_json::Value::Null,
+                                                },
+                                            ),
+                                        ]);
+                                        return Some(Ok(LogMsg::JsonPatch(rewritten)));
+                                    }
+                                    _ => {
+                                        return Some(Ok(LogMsg::JsonPatch(patch)));
+                                    }
+                                }
+                            }
+                            None
+                        }
+                        Ok(other) => Some(Ok(other)),
+                        Err(_) => None,
+                    }
+                }
+            });
 
         let initial_stream = futures::stream::iter(vec![Ok(initial_msg), Ok(LogMsg::Ready)]);
         Ok(initial_stream.chain(filtered_stream).boxed())

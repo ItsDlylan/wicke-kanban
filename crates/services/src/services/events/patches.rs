@@ -172,6 +172,38 @@ pub mod workspace_patch {
     }
 }
 
+/// Helper functions for creating swarm overview patches.
+/// Pushes a full SwarmOverview snapshot as a single replace at `/swarm_overview/{task_id}`.
+pub mod swarm_overview_patch {
+    use super::*;
+
+    fn swarm_overview_path(task_id: Uuid) -> String {
+        format!(
+            "/swarm_overview/{}",
+            escape_pointer_segment(&task_id.to_string())
+        )
+    }
+
+    /// Replace the full swarm overview for a task
+    pub fn replace(task_id: Uuid, overview_value: serde_json::Value) -> Patch {
+        Patch(vec![PatchOperation::Replace(ReplaceOperation {
+            path: swarm_overview_path(task_id)
+                .try_into()
+                .expect("Swarm overview path should be valid"),
+            value: overview_value,
+        })])
+    }
+
+    /// Remove a swarm overview
+    pub fn remove(task_id: Uuid) -> Patch {
+        Patch(vec![PatchOperation::Remove(RemoveOperation {
+            path: swarm_overview_path(task_id)
+                .try_into()
+                .expect("Swarm overview path should be valid"),
+        })])
+    }
+}
+
 /// Helper functions for creating scratch-specific patches.
 /// All patches use path "/scratch" - filtering is done by matching id and payload type in the value.
 pub mod scratch_patch {

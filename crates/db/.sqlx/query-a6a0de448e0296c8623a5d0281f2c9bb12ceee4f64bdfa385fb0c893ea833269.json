@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description,\n                      status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\",\n                      parent_workspace_id as \"parent_workspace_id: Uuid\",\n                      parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\",\n                      plan, plan_status, is_human as \"is_human!: bool\",\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks WHERE plan_status = 'generating'",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description,\n                      status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\",\n                      parent_workspace_id as \"parent_workspace_id: Uuid\",\n                      parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\",\n                      plan, plan_status, is_human as \"is_human!: bool\",\n                      routing_decision,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks WHERE plan_status = 'generating'",
   "describe": {
     "columns": [
       {
@@ -64,13 +64,18 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "routing_decision",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 14,
         "type_info": "Text"
       }
     ],
@@ -90,9 +95,10 @@
       true,
       true,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "819aaa52a1be6610665e630970034eb6a363e27820c9d764e6e6f15cf2cc15a0"
+  "hash": "a6a0de448e0296c8623a5d0281f2c9bb12ceee4f64bdfa385fb0c893ea833269"
 }

@@ -9,7 +9,12 @@ use sqlx::SqlitePool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{decomposer, spec_generator};
+use super::{decomposer, interview, spec_assessor, spec_generator};
+
+/// Maximum re-entries for the interview insufficiency loop (section 6.6, Loop 1).
+const MAX_PLAN_REENTRIES: u32 = 2;
+/// Minimum confidence threshold for planning output (section 6.6, Loop 1).
+const MIN_PLAN_CONFIDENCE: f64 = 0.6;
 
 #[derive(Debug, Error)]
 pub enum AutoPlannerError {
@@ -178,6 +183,39 @@ pub fn build_auto_plan_prompt(title: &str, description: Option<&str>) -> String 
     prompt
 }
 
+/// Build a plan prompt that includes additional context from a previous attempt
+/// and targeted follow-up areas (section 6.6, Loop 1).
+fn build_reentry_plan_prompt(
+    title: &str,
+    description: Option<&str>,
+    previous_plan: &str,
+    focus_areas: &[String],
+) -> String {
+    let mut prompt = build_auto_plan_prompt(title, description);
+
+    prompt.push_str("\n## Previous Plan Attempt\n\n");
+    prompt.push_str("A previous planning attempt produced the following plan, but it was identified as having low confidence. ");
+    prompt
+        .push_str("Please refine the plan, paying special attention to the areas noted below.\n\n");
+
+    // Cap the previous plan to avoid excessive prompt size
+    let capped_plan = if previous_plan.len() > 8000 {
+        &previous_plan[..8000]
+    } else {
+        previous_plan
+    };
+    prompt.push_str(capped_plan);
+
+    if !focus_areas.is_empty() {
+        prompt.push_str("\n\n## Areas Needing More Detail\n\n");
+        for area in focus_areas {
+            prompt.push_str(&format!("- {}\n", area));
+        }
+    }
+
+    prompt
+}
+
 /// Shell out to `claude --print -p <prompt>` to generate a plan.
 /// This is a blocking call — use `spawn_blocking` from async context.
 pub fn run_plan_generation(prompt: &str, working_dir: &Path) -> Result<String, AutoPlannerError> {
@@ -199,13 +237,55 @@ pub fn run_plan_generation(prompt: &str, working_dir: &Path) -> Result<String, A
     Ok(stdout)
 }
 
+/// Estimate planning confidence from the generated plan text (section 6.6, Loop 1).
+/// Heuristic: checks for TODO/TBD markers, question marks, and plan length as
+/// signals of confidence. Returns a value between 0.0 and 1.0.
+fn estimate_plan_confidence(plan_text: &str) -> f64 {
+    let lines: Vec<&str> = plan_text.lines().collect();
+    let total_lines = lines.len() as f64;
+
+    if total_lines < 5.0 {
+        return 0.3; // Very short plans are low confidence
+    }
+
+    let mut penalty = 0.0;
+
+    // Count uncertainty markers
+    let uncertainty_markers = lines
+        .iter()
+        .filter(|l| {
+            let lower = l.to_lowercase();
+            lower.contains("todo:")
+                || lower.contains("tbd:")
+                || lower.contains("unclear")
+                || lower.contains("not sure")
+                || lower.contains("need to determine")
+                || lower.contains("clarify:")
+        })
+        .count() as f64;
+
+    penalty += (uncertainty_markers / total_lines) * 0.5;
+
+    // Count open questions in plan
+    let question_count = lines.iter().filter(|l| l.trim().ends_with('?')).count() as f64;
+    penalty += (question_count / total_lines) * 0.3;
+
+    // Very short plans with few steps
+    if total_lines < 15.0 {
+        penalty += 0.1;
+    }
+
+    (1.0 - penalty).max(0.0).min(1.0)
+}
+
 /// Spawn a background task that generates a plan for the given task.
 ///
 /// 1. Sets plan_status = "generating"
 /// 2. Gets working dir from project repos
 /// 3. Runs `claude --print` via spawn_blocking
-/// 4. On success: stores plan text, transitions to Plan status
-/// 5. On failure: sets plan_status = "failed", leaves task in Backlog
+/// 4. Checks planning confidence (section 6.6, Loop 1)
+/// 5. On success: stores plan text, transitions to Plan status
+/// 6. On failure: sets plan_status = "failed", leaves task in Backlog
 pub fn spawn_auto_plan(
     pool: SqlitePool,
     task_id: Uuid,
@@ -262,63 +342,137 @@ pub fn spawn_auto_plan(
             }
         };
 
-        let prompt = build_auto_plan_prompt(&title, description.as_deref());
-        let working_path = std::path::PathBuf::from(&working_dir);
+        // Plan generation with re-entry loop (section 6.6, Loop 1)
+        let mut plan_text = String::new();
+        let mut attempt = 0u32;
 
-        // Run claude --print in a blocking thread
-        let result =
-            tokio::task::spawn_blocking(move || run_plan_generation(&prompt, &working_path)).await;
+        loop {
+            let prompt = if attempt == 0 {
+                build_auto_plan_prompt(&title, description.as_deref())
+            } else {
+                let open_questions = interview::extract_open_questions(&plan_text);
+                let focus_areas: Vec<String> =
+                    open_questions.iter().map(|q| q.question.clone()).collect();
+                build_reentry_plan_prompt(&title, description.as_deref(), &plan_text, &focus_areas)
+            };
 
-        match result {
-            Ok(Ok(plan_text)) => {
-                // Success: store plan
-                if let Err(e) = Task::update_plan(&pool, task_id, &plan_text, "completed").await {
-                    tracing::error!("Failed to store plan for task {}: {}", task_id, e);
+            let working_path = std::path::PathBuf::from(&working_dir);
+            let result =
+                tokio::task::spawn_blocking(move || run_plan_generation(&prompt, &working_path))
+                    .await;
+
+            match result {
+                Ok(Ok(new_plan_text)) => {
+                    plan_text = new_plan_text;
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Plan generation failed for task {}: {}", task_id, e);
+                    let _ = Task::update_plan(
+                        &pool,
+                        task_id,
+                        &format!("Plan generation failed: {e}"),
+                        "failed",
+                    )
+                    .await;
                     return;
                 }
+                Err(e) => {
+                    tracing::error!("Plan generation task panicked for task {}: {}", task_id, e);
+                    let _ = Task::update_plan(
+                        &pool,
+                        task_id,
+                        "Plan generation task panicked",
+                        "failed",
+                    )
+                    .await;
+                    return;
+                }
+            }
 
-                // Auto-generate spec sheet and decompose into child tasks
-                // so the task is prepared for Ralph execution.
-                // Failures here are non-fatal — the task still transitions to Ready.
-                auto_prepare_for_ralph(
-                    &pool,
-                    task_id,
-                    project_id,
-                    &title,
-                    description.as_deref(),
-                    &plan_text,
-                    &working_dir,
-                )
-                .await;
+            // Check planning confidence (section 6.6, Loop 1)
+            let confidence = estimate_plan_confidence(&plan_text);
+            attempt += 1;
 
-                if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
-                    tracing::error!(
-                        "Failed to transition task {} to Ready status: {}",
+            if confidence >= MIN_PLAN_CONFIDENCE || attempt > MAX_PLAN_REENTRIES {
+                if confidence < MIN_PLAN_CONFIDENCE {
+                    tracing::warn!(
+                        "Plan for task {} has low confidence ({:.2}) after {} attempts, proceeding anyway",
+                        task_id,
+                        confidence,
+                        attempt
+                    );
+                } else {
+                    tracing::info!(
+                        "Plan for task {} confidence: {:.2} (attempt {})",
+                        task_id,
+                        confidence,
+                        attempt
+                    );
+                }
+                break;
+            }
+
+            tracing::info!(
+                "Plan for task {} has low confidence ({:.2}), re-entering planning (attempt {}/{})",
+                task_id,
+                confidence,
+                attempt,
+                MAX_PLAN_REENTRIES + 1
+            );
+        }
+
+        // Success: store plan
+        if let Err(e) = Task::update_plan(&pool, task_id, &plan_text, "completed").await {
+            tracing::error!("Failed to store plan for task {}: {}", task_id, e);
+            return;
+        }
+
+        // Extract and log interview questions from the plan (section 6.3.2)
+        let open_questions = interview::extract_open_questions(&plan_text);
+        if !open_questions.is_empty() {
+            tracing::info!(
+                "Plan for task {} has {} open questions that may need interview",
+                task_id,
+                open_questions.len()
+            );
+            // Store interview phase as JSON in the plan for future use
+            let interview_phase = interview::InterviewPhase::with_questions(open_questions);
+            if let Ok(interview_json) = serde_json::to_string(&interview_phase) {
+                // Store interview data alongside the plan (non-fatal if fails)
+                if let Err(e) = Task::update_plan_status(&pool, task_id, "completed").await {
+                    tracing::warn!(
+                        "Failed to update plan status after interview extraction for task {}: {}",
                         task_id,
                         e
                     );
                 }
-                tracing::info!("Auto-plan generated successfully for task {}", task_id);
-            }
-            Ok(Err(e)) => {
-                // Claude execution failed
-                tracing::error!("Plan generation failed for task {}: {}", task_id, e);
-                let _ = Task::update_plan(
-                    &pool,
-                    task_id,
-                    &format!("Plan generation failed: {e}"),
-                    "failed",
-                )
-                .await;
-            }
-            Err(e) => {
-                // spawn_blocking panicked
-                tracing::error!("Plan generation task panicked for task {}: {}", task_id, e);
-                let _ =
-                    Task::update_plan(&pool, task_id, "Plan generation task panicked", "failed")
-                        .await;
+                // Log the interview data for now; full DB storage can be added later
+                tracing::debug!("Interview phase for task {}: {}", task_id, interview_json);
             }
         }
+
+        // Auto-generate spec sheet and decompose into child tasks
+        // so the task is prepared for Ralph execution.
+        // Failures here are non-fatal — the task still transitions to Ready.
+        auto_prepare_for_ralph(
+            &pool,
+            task_id,
+            project_id,
+            &title,
+            description.as_deref(),
+            &plan_text,
+            &working_dir,
+        )
+        .await;
+
+        if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
+            tracing::error!(
+                "Failed to transition task {} to Ready status: {}",
+                task_id,
+                e
+            );
+        }
+        tracing::info!("Auto-plan generated successfully for task {}", task_id);
     });
 }
 
@@ -408,6 +562,67 @@ async fn auto_prepare_for_ralph(
         }
     };
 
+    // Step 1.5: Run routing assessment (skip for trivial tasks)
+    // Uses the concurrent 3-agent ranking pipeline when spec is substantial enough (section 6.3.4)
+    let should_assess = stored_spec
+        .overview
+        .as_deref()
+        .map_or(false, |o| o.len() > 50);
+    if should_assess {
+        match spec_assessor::run_full_assessment(&stored_spec, title, Path::new(&working_dir)).await
+        {
+            Ok((assessment, synthesis)) => {
+                let routing = if let Some(ref synth) = synthesis {
+                    spec_assessor::route_from_synthesis(synth)
+                } else {
+                    spec_assessor::route_from_score(&assessment)
+                };
+
+                if let Err(e) = SpecSheet::update_complexity_score(
+                    pool,
+                    stored_spec.id,
+                    assessment.complexity_score as i64,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        "Failed to store complexity score for task {}: {}",
+                        task_id,
+                        e
+                    );
+                }
+                if let Err(e) = Task::update_routing_decision(pool, task_id, &routing).await {
+                    tracing::warn!(
+                        "Failed to store routing decision for task {}: {}",
+                        task_id,
+                        e
+                    );
+                }
+
+                if let Some(synth) = &synthesis {
+                    tracing::info!(
+                        "Spec assessment for task {} (3-agent synthesis): score={}, routing={}, confidence={:.2}, divergence={}",
+                        task_id,
+                        assessment.complexity_score,
+                        routing,
+                        synth.confidence,
+                        synth.divergence_detected
+                    );
+                } else {
+                    tracing::info!(
+                        "Spec assessment for task {} (fallback single): score={}, routing={}",
+                        task_id,
+                        assessment.complexity_score,
+                        routing
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Spec assessment failed for task {}: {}", task_id, e);
+            }
+        }
+    }
+
     // Step 2: Check if child tasks already exist (idempotent on recovery)
     let existing_children = Task::find_by_parent_task_id(pool, task_id).await;
     if let Ok(ref children) = existing_children {
@@ -472,5 +687,69 @@ async fn auto_prepare_for_ralph(
                 e
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_auto_plan_prompt_with_description() {
+        let prompt = build_auto_plan_prompt("Add login", Some("Create login page"));
+        assert!(prompt.contains("# Implementation Plan: Add login"));
+        assert!(prompt.contains("Create login page"));
+    }
+
+    #[test]
+    fn test_build_auto_plan_prompt_no_description() {
+        let prompt = build_auto_plan_prompt("Add login", None);
+        assert!(prompt.contains("# Implementation Plan: Add login"));
+        assert!(!prompt.contains("## Task Description"));
+    }
+
+    #[test]
+    fn test_build_reentry_plan_prompt() {
+        let prompt = build_reentry_plan_prompt(
+            "Feature X",
+            Some("Build feature X"),
+            "## Step 1\nDo something\nTODO: Determine schema",
+            &["What schema to use?".to_string()],
+        );
+        assert!(prompt.contains("Previous Plan Attempt"));
+        assert!(prompt.contains("Do something"));
+        assert!(prompt.contains("Areas Needing More Detail"));
+        assert!(prompt.contains("What schema to use?"));
+    }
+
+    #[test]
+    fn test_estimate_plan_confidence_high() {
+        let plan = (0..30)
+            .map(|i| format!("{}. Step {}: Do something concrete here", i + 1, i + 1))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let confidence = estimate_plan_confidence(&plan);
+        assert!(confidence > 0.8);
+    }
+
+    #[test]
+    fn test_estimate_plan_confidence_low_with_todos() {
+        let plan = "1. Step 1: Do X\nTODO: Figure out the schema\nTODO: Unclear API design\nTBD: Which library to use\n4. Step 4: Deploy";
+        let confidence = estimate_plan_confidence(plan);
+        assert!(confidence < 0.7);
+    }
+
+    #[test]
+    fn test_estimate_plan_confidence_very_short() {
+        let plan = "Do the thing.\nThat's it.";
+        let confidence = estimate_plan_confidence(plan);
+        assert!(confidence <= 0.3);
+    }
+
+    #[test]
+    fn test_estimate_plan_confidence_questions() {
+        let plan = "1. Create the database schema\nShould we use PostgreSQL?\nWhat about migrations?\n4. Implement API";
+        let confidence = estimate_plan_confidence(plan);
+        assert!(confidence < 0.8);
     }
 }

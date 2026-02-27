@@ -106,6 +106,11 @@ import {
   PlanningSession,
   CreatePlanningSession,
   UpdatePlanningSession,
+  SwarmOverview,
+  SwarmWithAgents,
+  SwarmAgent,
+  SwarmSuccession,
+  SwarmSummary,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1600,6 +1605,44 @@ export const migrationApi = {
     });
     return handleApiResponse<MigrationResponse>(response);
   },
+};
+
+// Swarms API
+export const swarmsApi = {
+  getByTaskId: async (taskId: string): Promise<SwarmOverview | null> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/swarm`);
+    return handleApiResponse<SwarmOverview | null>(response);
+  },
+
+  get: async (swarmId: string): Promise<SwarmWithAgents> => {
+    const response = await makeRequest(`/api/swarms/${swarmId}`);
+    return handleApiResponse<SwarmWithAgents>(response);
+  },
+
+  getAgents: async (swarmId: string): Promise<SwarmAgent[]> => {
+    const response = await makeRequest(`/api/swarms/${swarmId}/agents`);
+    return handleApiResponse<SwarmAgent[]>(response);
+  },
+
+  getSuccessions: async (swarmId: string): Promise<SwarmSuccession[]> => {
+    const response = await makeRequest(`/api/swarms/${swarmId}/successions`);
+    return handleApiResponse<SwarmSuccession[]>(response);
+  },
+
+  cancel: async (swarmId: string): Promise<void> => {
+    const response = await makeRequest(`/api/swarms/${swarmId}/cancel`, {
+      method: 'POST',
+    });
+    return handleApiResponse<void>(response);
+  },
+
+  listForTask: async (taskId: string): Promise<SwarmSummary[]> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/swarms`);
+    return handleApiResponse<SwarmSummary[]>(response);
+  },
+
+  getSwarmStreamUrl: (taskId: string): string =>
+    `/api/tasks/${taskId}/swarm/ws`,
 };
 
 // Usage API

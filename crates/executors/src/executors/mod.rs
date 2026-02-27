@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use ts_rs::TS;
 use workspace_utils::msg_store::MsgStore;
 
+pub use self::claude::protocol::ProtocolPeer;
 #[cfg(feature = "qa-mode")]
 use crate::executors::qa_mock::QaMockExecutor;
 use crate::{
@@ -268,6 +269,8 @@ pub struct SpawnedChild {
     pub exit_signal: Option<ExecutorExitSignal>,
     /// Container → Executor: signals when container wants to cancel the execution
     pub cancel: Option<CancellationToken>,
+    /// Protocol peer for injecting messages into running agents
+    pub protocol_peer: Option<ProtocolPeer>,
 }
 
 impl From<AsyncGroupChild> for SpawnedChild {
@@ -276,6 +279,7 @@ impl From<AsyncGroupChild> for SpawnedChild {
             child,
             exit_signal: None,
             cancel: None,
+            protocol_peer: None,
         }
     }
 }

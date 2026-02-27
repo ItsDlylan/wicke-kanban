@@ -23,6 +23,7 @@ pub mod scratch;
 pub mod search;
 pub mod sessions;
 pub mod spec_sheets;
+pub mod swarms;
 pub mod tags;
 pub mod task_attempts;
 pub mod tasks;
@@ -48,6 +49,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(search::router(&deployment))
         .merge(sessions::router(&deployment))
         .merge(spec_sheets::router())
+        .merge(swarms::router(&deployment))
         .merge(planning_sessions::router())
         .merge(terminal::router())
         .merge(usage::router())

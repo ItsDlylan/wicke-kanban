@@ -16,6 +16,7 @@ import { RightSidebar } from '@/components/ui-new/containers/RightSidebar';
 import { ChangesPanelContainer } from '@/components/ui-new/containers/ChangesPanelContainer';
 import { CreateChatBoxContainer } from '@/components/ui-new/containers/CreateChatBoxContainer';
 import { PreviewBrowserContainer } from '@/components/ui-new/containers/PreviewBrowserContainer';
+import { SwarmPanelContainer } from '@/components/ui-new/containers/SwarmPanelContainer';
 import { WorkspacesGuideDialog } from '@/components/ui-new/dialogs/WorkspacesGuideDialog';
 import { useUserSystem } from '@/components/ConfigProvider';
 
@@ -177,6 +178,9 @@ export function WorkspacesLayout() {
                         className=""
                       />
                     )}
+                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.SWARM && (
+                    <SwarmPanelContainer className="" />
+                  )}
                 </Panel>
               )}
             </Group>

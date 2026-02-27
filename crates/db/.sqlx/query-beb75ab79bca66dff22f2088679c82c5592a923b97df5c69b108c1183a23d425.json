@@ -1,0 +1,104 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\", swarm_id as \"swarm_id!: Uuid\",\n                      execution_process_id as \"execution_process_id: Uuid\",\n                      subtask_description, generation as \"generation!: i64\",\n                      predecessor_id as \"predecessor_id: Uuid\",\n                      status as \"status!: SwarmAgentStatus\",\n                      context_tokens_used as \"context_tokens_used: i64\",\n                      context_window_size as \"context_window_size: i64\",\n                      context_threshold as \"context_threshold!: f64\",\n                      sort_order as \"sort_order!: i64\",\n                      git_branch,\n                      succession_count as \"succession_count!: i64\",\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarm_agents\n               WHERE rowid = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "swarm_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "execution_process_id: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "subtask_description",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "generation!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "predecessor_id: Uuid",
+        "ordinal": 5,
+        "type_info": "Blob"
+      },
+      {
+        "name": "status!: SwarmAgentStatus",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "context_tokens_used: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "context_window_size: i64",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "context_threshold!: f64",
+        "ordinal": 9,
+        "type_info": "Float"
+      },
+      {
+        "name": "sort_order!: i64",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "git_branch",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "succession_count!: i64",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 14,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "beb75ab79bca66dff22f2088679c82c5592a923b97df5c69b108c1183a23d425"
+}
