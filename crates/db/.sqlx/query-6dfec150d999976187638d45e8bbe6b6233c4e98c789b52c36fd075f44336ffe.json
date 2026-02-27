@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                      workspace_id as \"workspace_id!: Uuid\",\n                      parent_agent_id as \"parent_agent_id: Uuid\",\n                      status as \"status!: SwarmStatus\",\n                      depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                      routing_decision,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarms\n               WHERE parent_agent_id = $1",
+  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                      workspace_id as \"workspace_id!: Uuid\",\n                      parent_agent_id as \"parent_agent_id: Uuid\",\n                      status as \"status!: SwarmStatus\",\n                      depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                      routing_decision,\n                      verifier_model,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarms\n               WHERE rowid = $1",
   "describe": {
     "columns": [
       {
@@ -44,13 +44,18 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "verifier_model",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
@@ -66,9 +71,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "d2c492be49a1c2b414d45ec5ff4d41b602f2d880334a4f599f116f90f7c4189d"
+  "hash": "6dfec150d999976187638d45e8bbe6b6233c4e98c789b52c36fd075f44336ffe"
 }

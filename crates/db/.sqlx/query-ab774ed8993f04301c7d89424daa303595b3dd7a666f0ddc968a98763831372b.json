@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                      workspace_id as \"workspace_id!: Uuid\",\n                      parent_agent_id as \"parent_agent_id: Uuid\",\n                      status as \"status!: SwarmStatus\",\n                      depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                      routing_decision,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarms\n               WHERE task_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                      workspace_id as \"workspace_id!: Uuid\",\n                      parent_agent_id as \"parent_agent_id: Uuid\",\n                      status as \"status!: SwarmStatus\",\n                      depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                      routing_decision,\n                      verifier_model,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarms\n               WHERE task_id = $1 AND status IN ('pending', 'running')\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -44,13 +44,18 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "verifier_model",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
@@ -66,9 +71,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "770532ee78a67c726fd579f09ce6c9dc6c88023bce9f6eefbdcf80799c04f085"
+  "hash": "ab774ed8993f04301c7d89424daa303595b3dd7a666f0ddc968a98763831372b"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO swarms (id, task_id, workspace_id, parent_agent_id, status, depth, max_depth, routing_decision)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n               RETURNING id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                         workspace_id as \"workspace_id!: Uuid\",\n                         parent_agent_id as \"parent_agent_id: Uuid\",\n                         status as \"status!: SwarmStatus\",\n                         depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                         routing_decision,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "SELECT id as \"id!: Uuid\", task_id as \"task_id!: Uuid\",\n                      workspace_id as \"workspace_id!: Uuid\",\n                      parent_agent_id as \"parent_agent_id: Uuid\",\n                      status as \"status!: SwarmStatus\",\n                      depth as \"depth!: i64\", max_depth as \"max_depth!: i64\",\n                      routing_decision,\n                      verifier_model,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM swarms\n               WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -44,18 +44,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "verifier_model",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 8
+      "Right": 1
     },
     "nullable": [
       false,
@@ -66,9 +71,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "481f705bb640be940c19d09737078ed299e87b0737eea7cc78d171655ba80348"
+  "hash": "984351f2430d522a249cd5a0dec4d7981e2ce61812364d4f6a5200e9838028d2"
 }

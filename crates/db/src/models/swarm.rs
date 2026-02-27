@@ -44,6 +44,7 @@ pub struct Swarm {
     pub depth: i64,
     pub max_depth: i64,
     pub routing_decision: Option<String>,
+    pub verifier_model: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -70,6 +71,7 @@ impl Swarm {
                          status as "status!: SwarmStatus",
                          depth as "depth!: i64", max_depth as "max_depth!: i64",
                          routing_decision,
+                         verifier_model,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -94,6 +96,7 @@ impl Swarm {
                       status as "status!: SwarmStatus",
                       depth as "depth!: i64", max_depth as "max_depth!: i64",
                       routing_decision,
+                      verifier_model,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarms
@@ -116,6 +119,7 @@ impl Swarm {
                       status as "status!: SwarmStatus",
                       depth as "depth!: i64", max_depth as "max_depth!: i64",
                       routing_decision,
+                      verifier_model,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarms
@@ -139,6 +143,7 @@ impl Swarm {
                       status as "status!: SwarmStatus",
                       depth as "depth!: i64", max_depth as "max_depth!: i64",
                       routing_decision,
+                      verifier_model,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarms
@@ -159,6 +164,7 @@ impl Swarm {
                       status as "status!: SwarmStatus",
                       depth as "depth!: i64", max_depth as "max_depth!: i64",
                       routing_decision,
+                      verifier_model,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarms
@@ -181,6 +187,7 @@ impl Swarm {
                       status as "status!: SwarmStatus",
                       depth as "depth!: i64", max_depth as "max_depth!: i64",
                       routing_decision,
+                      verifier_model,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM swarms
@@ -200,6 +207,21 @@ impl Swarm {
             "UPDATE swarms SET status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
             id,
             status,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_verifier_model(
+        pool: &SqlitePool,
+        id: Uuid,
+        verifier_model: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE swarms SET verifier_model = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            verifier_model,
         )
         .execute(pool)
         .await?;
