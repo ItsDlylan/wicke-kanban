@@ -595,13 +595,31 @@ pub fn run_synthesis(reports: &[RankingReport]) -> SynthesisOutcome {
     })
 }
 
+/// Result of the full assessment pipeline, including interview recommendations
+/// when ranking agents diverge significantly (section 6.6, Loop 2).
+#[derive(Debug)]
+pub struct FullAssessmentResult {
+    pub assessment: SpecAssessment,
+    pub synthesis: Option<SynthesisResult>,
+    /// When ranking agents diverge beyond threshold, contains the ambiguous
+    /// sections and recommended questions for the interview loop.
+    pub needs_interview: Option<InterviewRecommendation>,
+}
+
+/// Recommendation to loop back to interview phase due to ranking divergence.
+#[derive(Debug, Clone)]
+pub struct InterviewRecommendation {
+    pub ambiguous_sections: Vec<String>,
+    pub recommended_questions: Vec<String>,
+}
+
 /// Run the full concurrent assessment pipeline: 3 ranking agents + synthesis.
 /// Falls back to single assessment if all ranking agents fail.
 pub async fn run_full_assessment(
     spec: &SpecSheet,
     task_title: &str,
     working_dir: &Path,
-) -> Result<(SpecAssessment, Option<SynthesisResult>), SpecAssessorError> {
+) -> Result<FullAssessmentResult, SpecAssessorError> {
     let ranking_results = run_concurrent_ranking(spec, task_title, working_dir).await;
 
     // Collect successful reports
@@ -617,7 +635,11 @@ pub async fn run_full_assessment(
                 SpecAssessorError::ExecutionFailed(format!("Fallback assessment panicked: {e}"))
             })??;
         let assessment = parse_assessment_output(&raw_output)?;
-        return Ok((assessment, None));
+        return Ok(FullAssessmentResult {
+            assessment,
+            synthesis: None,
+            needs_interview: None,
+        });
     }
 
     // Synthesize
@@ -645,13 +667,19 @@ pub async fn run_full_assessment(
                 recommended: synthesis.routing_decision.clone(),
                 confidence: synthesis.confidence,
             };
-            Ok((assessment, Some(synthesis)))
+            Ok(FullAssessmentResult {
+                assessment,
+                synthesis: Some(synthesis),
+                needs_interview: None,
+            })
         }
         SynthesisOutcome::NeedsInterview {
-            ambiguous_sections, ..
+            ambiguous_sections,
+            recommended_questions,
         } => {
             // Even when interview is recommended, still produce a best-effort assessment
-            // so the pipeline can continue (interview will be handled by the caller)
+            // so the pipeline can continue. The caller uses `needs_interview` to decide
+            // whether to loop back to the interview phase (section 6.6, Loop 2).
             let median_score = {
                 let mut scores: Vec<u8> = reports.iter().map(|r| r.complexity_score).collect();
                 scores.sort();
@@ -694,7 +722,14 @@ pub async fn run_full_assessment(
                 ambiguous_sections
             );
 
-            Ok((assessment, None))
+            Ok(FullAssessmentResult {
+                assessment,
+                synthesis: None,
+                needs_interview: Some(InterviewRecommendation {
+                    ambiguous_sections,
+                    recommended_questions,
+                }),
+            })
         }
     }
 }

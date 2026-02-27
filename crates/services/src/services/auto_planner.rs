@@ -435,19 +435,15 @@ pub fn spawn_auto_plan(
                 task_id,
                 open_questions.len()
             );
-            // Store interview phase as JSON in the plan for future use
             let interview_phase = interview::InterviewPhase::with_questions(open_questions);
             if let Ok(interview_json) = serde_json::to_string(&interview_phase) {
-                // Store interview data alongside the plan (non-fatal if fails)
-                if let Err(e) = Task::update_plan_status(&pool, task_id, "completed").await {
+                if let Err(e) = Task::update_interview_data(&pool, task_id, &interview_json).await {
                     tracing::warn!(
-                        "Failed to update plan status after interview extraction for task {}: {}",
+                        "Failed to persist interview data for task {}: {}",
                         task_id,
                         e
                     );
                 }
-                // Log the interview data for now; full DB storage can be added later
-                tracing::debug!("Interview phase for task {}: {}", task_id, interview_json);
             }
         }
 
@@ -571,17 +567,17 @@ async fn auto_prepare_for_ralph(
     if should_assess {
         match spec_assessor::run_full_assessment(&stored_spec, title, Path::new(&working_dir)).await
         {
-            Ok((assessment, synthesis)) => {
-                let routing = if let Some(ref synth) = synthesis {
+            Ok(result) => {
+                let routing = if let Some(ref synth) = result.synthesis {
                     spec_assessor::route_from_synthesis(synth)
                 } else {
-                    spec_assessor::route_from_score(&assessment)
+                    spec_assessor::route_from_score(&result.assessment)
                 };
 
                 if let Err(e) = SpecSheet::update_complexity_score(
                     pool,
                     stored_spec.id,
-                    assessment.complexity_score as i64,
+                    result.assessment.complexity_score as i64,
                 )
                 .await
                 {
@@ -599,11 +595,58 @@ async fn auto_prepare_for_ralph(
                     );
                 }
 
-                if let Some(synth) = &synthesis {
+                // Handle interview recommendation from ranking divergence (section 6.6, Loop 2)
+                if let Some(ref interview_rec) = result.needs_interview {
+                    tracing::warn!(
+                        "Task {} assessment recommends interview loop — {} ambiguous sections, {} questions",
+                        task_id,
+                        interview_rec.ambiguous_sections.len(),
+                        interview_rec.recommended_questions.len()
+                    );
+                    // Convert InterviewRecommendation into InterviewQuestions for the interview phase
+                    let questions: Vec<interview::InterviewQuestion> = interview_rec
+                        .recommended_questions
+                        .iter()
+                        .map(|q| interview::InterviewQuestion {
+                            question: q.clone(),
+                            context: interview_rec.ambiguous_sections.join(", "),
+                            priority: interview::InterviewPriority::High,
+                        })
+                        .collect();
+                    let interview_phase = interview::InterviewPhase::with_questions(questions);
+                    tracing::info!(
+                        "Task {} interview phase created with {} questions (status: {:?})",
+                        task_id,
+                        interview_phase.open_questions.len(),
+                        interview_phase.status
+                    );
+                    // Persist interview phase to DB
+                    match serde_json::to_string(&interview_phase) {
+                        Ok(json) => {
+                            if let Err(e) = Task::update_interview_data(pool, task_id, &json).await
+                            {
+                                tracing::warn!(
+                                    "Failed to persist interview data for task {}: {}",
+                                    task_id,
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to serialize interview phase for task {}: {}",
+                                task_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                if let Some(synth) = &result.synthesis {
                     tracing::info!(
                         "Spec assessment for task {} (3-agent synthesis): score={}, routing={}, confidence={:.2}, divergence={}",
                         task_id,
-                        assessment.complexity_score,
+                        result.assessment.complexity_score,
                         routing,
                         synth.confidence,
                         synth.divergence_detected
@@ -612,7 +655,7 @@ async fn auto_prepare_for_ralph(
                     tracing::info!(
                         "Spec assessment for task {} (fallback single): score={}, routing={}",
                         task_id,
-                        assessment.complexity_score,
+                        result.assessment.complexity_score,
                         routing
                     );
                 }

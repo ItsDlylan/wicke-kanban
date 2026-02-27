@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, is_human as \"is_human!: bool\", routing_decision, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description,\n                      status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\",\n                      parent_workspace_id as \"parent_workspace_id: Uuid\",\n                      parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\",\n                      plan, plan_status, is_human as \"is_human!: bool\",\n                      routing_decision, interview_data,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE status = 'plangenerating' AND plan_status = 'completed'",
   "describe": {
     "columns": [
       {
@@ -69,18 +69,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "interview_data",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 15,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       true,
@@ -96,9 +101,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "617fc4a7179a1ef5e3692a335c26c9ae64c8fa76bdb7b4c4c046fed2ba652dbd"
+  "hash": "2d0c9d12c74056544cfb593f1b4b15a9b632968721f0df8243bb882ce402efda"
 }

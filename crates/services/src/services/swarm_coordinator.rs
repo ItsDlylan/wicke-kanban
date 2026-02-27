@@ -249,16 +249,6 @@ async fn spawn_single_agent(
         .await?
         .ok_or(SwarmCoordinatorError::SwarmNotFound(swarm_id))?;
 
-    // Build agent prompt — enrich with verification report for successors
-    let prompt = if agent.predecessor_id.is_some() {
-        let succession =
-            SwarmSuccession::find_active_for_agent(pool, agent.predecessor_id.unwrap()).await?;
-        let report = succession.and_then(|s| s.verification_report);
-        build_agent_prompt(&agent.subtask_description, report.as_deref())
-    } else {
-        build_agent_prompt(&agent.subtask_description, None)
-    };
-
     // Get parent workspace for branch/container info
     let parent_workspace = Workspace::find_by_id(pool, swarm.workspace_id)
         .await?
@@ -299,6 +289,27 @@ async fn spawn_single_agent(
     let child_workspace = Workspace::find_by_id(pool, child_workspace.id)
         .await?
         .ok_or(SwarmCoordinatorError::WorkspaceNotFound(child_workspace.id))?;
+
+    // Create git branch BEFORE building prompt so we can include it in instructions.
+    // Uses `git branch` (not checkout) to avoid switching the shared working tree.
+    let git_branch = format!("swarm/{}/gen-{}", swarm_id, agent.generation);
+    SwarmAgent::update_git_branch(pool, agent.id, &git_branch).await?;
+    create_agent_git_branch(&child_workspace, &git_branch);
+
+    // Build agent prompt — enrich with verification report for successors
+    // and include git branch for isolated checkout
+    let prompt = if agent.predecessor_id.is_some() {
+        let succession =
+            SwarmSuccession::find_active_for_agent(pool, agent.predecessor_id.unwrap()).await?;
+        let report = succession.and_then(|s| s.verification_report);
+        build_agent_prompt(
+            &agent.subtask_description,
+            report.as_deref(),
+            Some(&git_branch),
+        )
+    } else {
+        build_agent_prompt(&agent.subtask_description, None, Some(&git_branch))
+    };
 
     // Create session
     let session = db::models::session::Session::create(
@@ -342,11 +353,6 @@ async fn spawn_single_agent(
     // Set agent status to Running
     SwarmAgent::update_status(pool, agent.id, SwarmAgentStatus::Running).await?;
 
-    // Create git branch for this agent generation (section 4.5, 7.4 — dead-end filtering)
-    let git_branch = format!("swarm/{}/gen-{}", swarm_id, agent.generation);
-    SwarmAgent::update_git_branch(pool, agent.id, &git_branch).await?;
-    create_agent_git_branch(&child_workspace, &git_branch);
-
     // Start context monitor for this execution
     if let Some(msg_store) = container.get_msg_store_by_id(&execution_process.id).await {
         let protocol_peer = container.get_protocol_peer(&execution_process.id).await;
@@ -364,7 +370,11 @@ async fn spawn_single_agent(
 }
 
 /// Build the execution prompt for a swarm agent.
-fn build_agent_prompt(subtask_description: &str, verification_report: Option<&str>) -> String {
+fn build_agent_prompt(
+    subtask_description: &str,
+    verification_report: Option<&str>,
+    git_branch: Option<&str>,
+) -> String {
     let mut prompt = String::new();
 
     prompt.push_str("# Swarm Agent Task\n\n");
@@ -387,6 +397,11 @@ fn build_agent_prompt(subtask_description: &str, verification_report: Option<&st
     }
 
     prompt.push_str("\n\n## Execution Guidelines\n");
+    if let Some(branch) = git_branch {
+        prompt.push_str(&format!(
+            "- FIRST: Run `git checkout {branch}` to switch to your isolated branch\n"
+        ));
+    }
     prompt.push_str("- Complete each step in order\n");
     prompt.push_str("- Verify each change compiles/works before moving to the next\n");
     prompt.push_str("- Commit your changes frequently with descriptive messages\n");
@@ -1011,6 +1026,23 @@ async fn complete_swarm(
 
     tracing::info!("Swarm {} completed", swarm_id);
 
+    let workspace = Workspace::find_by_id(pool, swarm.workspace_id)
+        .await?
+        .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
+
+    let aggregation_passed = run_aggregation_check(pool, &swarm, &workspace).await;
+
+    if !aggregation_passed {
+        // Aggregation found critical gaps — mark swarm as failed so it doesn't
+        // silently pass incomplete work upstream.
+        Swarm::update_status(pool, swarm_id, SwarmStatus::Failed).await?;
+        tracing::warn!(
+            "Swarm {} failed aggregation check — marked as failed",
+            swarm_id,
+        );
+        return Ok(());
+    }
+
     if let Some(parent_agent_id) = swarm.parent_agent_id {
         // Sub-swarm completed (section 3.6): mark the parent agent as completed
         // and advance the parent swarm.
@@ -1026,16 +1058,6 @@ async fn complete_swarm(
             parent_agent.swarm_id,
         );
 
-        // Run aggregation check for sub-swarm results
-        let workspace = Workspace::find_by_id(pool, swarm.workspace_id)
-            .await?
-            .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
-
-        run_aggregation_check(pool, &swarm, &workspace).await;
-
-        // Advance the parent swarm — use a dummy profile since we need one
-        // to spawn agents. In practice, the executor profile is carried forward.
-        // For now we just check if more agents are eligible in the parent swarm.
         let parent_swarm = Swarm::find_by_id(pool, parent_agent.swarm_id)
             .await?
             .ok_or(SwarmCoordinatorError::SwarmNotFound(parent_agent.swarm_id))?;
@@ -1046,21 +1068,25 @@ async fn complete_swarm(
             Box::pin(complete_swarm(pool, container, parent_swarm.id)).await?;
         }
     } else {
-        // Root swarm: run final aggregation and transition parent task to QA
-        let workspace = Workspace::find_by_id(pool, swarm.workspace_id)
-            .await?
-            .ok_or(SwarmCoordinatorError::WorkspaceNotFound(swarm.workspace_id))?;
-
-        run_aggregation_check(pool, &swarm, &workspace).await;
-
+        // Root swarm: transition parent task to QA
         super::ralph_loop::complete_ralph_loop(pool, swarm.task_id).await?;
     }
 
     Ok(())
 }
 
+/// Structured result from an aggregation check (section 3.6).
+#[derive(Debug, Deserialize)]
+struct AggregationResult {
+    pub complete: bool,
+    pub coverage_pct: u8,
+    pub missing_items: Vec<String>,
+    pub summary: String,
+}
+
 /// Run an aggregation check to verify completeness of all child agents' work (section 3.6).
-async fn run_aggregation_check(pool: &SqlitePool, swarm: &Swarm, workspace: &Workspace) {
+/// Returns true if the aggregation passes, false if critical gaps were found.
+async fn run_aggregation_check(pool: &SqlitePool, swarm: &Swarm, workspace: &Workspace) -> bool {
     let working_dir = if let Some(ref container_ref) = workspace.container_ref {
         std::path::PathBuf::from(container_ref)
     } else {
@@ -1071,7 +1097,7 @@ async fn run_aggregation_check(pool: &SqlitePool, swarm: &Swarm, workspace: &Wor
         Ok(agents) => agents,
         Err(e) => {
             tracing::warn!("Failed to fetch agents for aggregation check: {}", e);
-            return;
+            return true; // Don't block on fetch failure
         }
     };
 
@@ -1090,37 +1116,139 @@ async fn run_aggregation_check(pool: &SqlitePool, swarm: &Swarm, workspace: &Wor
         .collect();
 
     if agent_summaries.is_empty() {
-        return;
+        return true;
     }
 
     let task = match Task::find_by_id(pool, swarm.task_id).await {
         Ok(Some(t)) => t,
-        _ => return,
+        _ => return true,
     };
 
+    // Get actual git diff for the aggregation check
+    let working_dir_for_diff = working_dir.clone();
+    let git_diff = tokio::task::spawn_blocking(move || get_git_diff_summary(&working_dir_for_diff))
+        .await
+        .unwrap_or_else(|_| "(git diff unavailable)".to_string());
+
+    let task_desc = task.description.as_deref().unwrap_or("(no description)");
+
     let prompt = format!(
-        "You are a result aggregation agent. Verify that the following agents' work \
-         covers the original task.\n\n\
-         ## Original Task\n{}\n\n\
-         ## Agent Work Summary\n{}\n\n\
-         ## Git Diff\n{}\n\n\
-         Respond with a brief assessment of completeness.",
-        task.title,
-        agent_summaries.join("\n"),
-        "(see working directory)",
+        r#"You are a result aggregation agent. Verify that the following agents' work covers the original task.
+
+## Original Task
+{title}
+
+{task_desc}
+
+## Agent Work Summary
+{summaries}
+
+## Git Diff
+{git_diff}
+
+## Instructions
+Evaluate completeness. Respond with ONLY a JSON object:
+
+{{"complete": true/false, "coverage_pct": 0-100, "missing_items": ["list of gaps"], "summary": "brief assessment"}}"#,
+        title = task.title,
+        task_desc = task_desc,
+        summaries = agent_summaries.join("\n"),
+        git_diff = git_diff,
     );
 
     let working_dir_clone = working_dir.clone();
-    let _result = tokio::task::spawn_blocking(move || {
+    let verifier_model = swarm
+        .verifier_model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_VERIFIER_MODEL.to_string());
+
+    let result = tokio::task::spawn_blocking(move || {
         std::process::Command::new("claude")
-            .args(["--print", "-p", &prompt, "--model", DEFAULT_VERIFIER_MODEL])
+            .args(["--print", "-p", &prompt, "--model", &verifier_model])
             .current_dir(&working_dir_clone)
             .output()
     })
     .await;
 
-    // Aggregation is best-effort; we log but don't block completion
-    tracing::info!("Aggregation check completed for swarm {}", swarm.id);
+    match result {
+        Ok(Ok(output)) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            match parse_aggregation_output(&stdout) {
+                Ok(agg) => {
+                    tracing::info!(
+                        "Aggregation check for swarm {}: complete={}, coverage={}%, missing={:?}",
+                        swarm.id,
+                        agg.complete,
+                        agg.coverage_pct,
+                        agg.missing_items,
+                    );
+
+                    // Store the aggregation result as a log for audit trail
+                    if let Ok(json) = serde_json::to_string(&serde_json::json!({
+                        "complete": agg.complete,
+                        "coverage_pct": agg.coverage_pct,
+                        "missing_items": agg.missing_items,
+                        "summary": agg.summary,
+                    })) {
+                        tracing::info!("Aggregation result for swarm {}: {}", swarm.id, json);
+                    }
+
+                    // Return false if coverage is critically low (<50%) to signal
+                    // the swarm should not be marked as completed
+                    if !agg.complete && agg.coverage_pct < 50 {
+                        tracing::warn!(
+                            "Aggregation check FAILED for swarm {}: only {}% coverage",
+                            swarm.id,
+                            agg.coverage_pct,
+                        );
+                        return false;
+                    }
+
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse aggregation output for swarm {}: {}",
+                        swarm.id,
+                        e
+                    );
+                    true // Don't block on parse failure
+                }
+            }
+        }
+        _ => {
+            tracing::warn!("Aggregation check command failed for swarm {}", swarm.id);
+            true // Don't block on command failure
+        }
+    }
+}
+
+/// Parse the aggregation verifier output, tolerating markdown fences.
+fn parse_aggregation_output(output: &str) -> Result<AggregationResult, SwarmCoordinatorError> {
+    let trimmed = output.trim();
+
+    let json_str = if trimmed.starts_with("```") {
+        let without_opening = trimmed
+            .strip_prefix("```json")
+            .or_else(|| trimmed.strip_prefix("```"))
+            .unwrap_or(trimmed);
+        without_opening
+            .strip_suffix("```")
+            .unwrap_or(without_opening)
+            .trim()
+    } else {
+        trimmed
+    };
+
+    let json_str = if json_str.starts_with('{') {
+        json_str
+    } else {
+        utils::text::find_json_object_start(json_str).unwrap_or(json_str)
+    };
+
+    serde_json::from_str(json_str).map_err(|e| {
+        SwarmCoordinatorError::VerifierFailed(format!("Failed to parse aggregation result: {e}"))
+    })
 }
 
 /// Get a summary of git changes in the working directory (best-effort).
@@ -1144,6 +1272,12 @@ fn get_git_diff_summary(working_dir: &Path) -> String {
 }
 
 /// Create a git branch for agent generation isolation (section 4.5, 7.4).
+///
+/// Uses `git branch` (not `git checkout -b`) to avoid switching the shared
+/// working tree, which would cause race conditions when multiple agents run
+/// concurrently in the same workspace. The agent's execution prompt instructs
+/// it to `git checkout <branch>` as its first step, ensuring each agent
+/// operates on its own branch without conflicting with siblings.
 fn create_agent_git_branch(workspace: &Workspace, branch_name: &str) {
     let working_dir = if let Some(ref container_ref) = workspace.container_ref {
         std::path::PathBuf::from(container_ref)
@@ -1151,8 +1285,9 @@ fn create_agent_git_branch(workspace: &Workspace, branch_name: &str) {
         return;
     };
 
+    // Create the branch without switching to it (safe for concurrent agents)
     let result = std::process::Command::new("git")
-        .args(["checkout", "-b", branch_name])
+        .args(["branch", branch_name])
         .current_dir(&working_dir)
         .output();
 
@@ -1162,12 +1297,8 @@ fn create_agent_git_branch(workspace: &Workspace, branch_name: &str) {
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            // Branch might already exist, try switching to it
             if stderr.contains("already exists") {
-                let _ = std::process::Command::new("git")
-                    .args(["checkout", branch_name])
-                    .current_dir(&working_dir)
-                    .output();
+                tracing::debug!("Git branch {} already exists", branch_name);
             } else {
                 tracing::warn!("Failed to create git branch {}: {}", branch_name, stderr);
             }
@@ -1262,17 +1393,18 @@ mod tests {
 
     #[test]
     fn test_build_agent_prompt_basic() {
-        let prompt = build_agent_prompt("Create a login page", None);
+        let prompt = build_agent_prompt("Create a login page", None, None);
         assert!(prompt.contains("# Swarm Agent Task"));
         assert!(prompt.contains("Create a login page"));
         assert!(prompt.contains("## Execution Guidelines"));
         assert!(!prompt.contains("Predecessor Verification Report"));
+        assert!(!prompt.contains("git checkout"));
     }
 
     #[test]
     fn test_build_agent_prompt_with_verification() {
         let report = r#"{"completed": ["Step 1"], "remaining": ["Step 2"]}"#;
-        let prompt = build_agent_prompt("Create a login page", Some(report));
+        let prompt = build_agent_prompt("Create a login page", Some(report), None);
         assert!(prompt.contains("## Predecessor Verification Report"));
         assert!(prompt.contains("Step 1"));
     }
@@ -1280,9 +1412,16 @@ mod tests {
     #[test]
     fn test_build_agent_prompt_verification_report_capped() {
         let long_report = "x".repeat(15_000);
-        let prompt = build_agent_prompt("task", Some(&long_report));
+        let prompt = build_agent_prompt("task", Some(&long_report), None);
         // The report should be capped
         assert!(prompt.len() < 15_500);
+    }
+
+    #[test]
+    fn test_build_agent_prompt_with_git_branch() {
+        let prompt = build_agent_prompt("Implement auth", None, Some("swarm/abc-123/gen-0"));
+        assert!(prompt.contains("git checkout swarm/abc-123/gen-0"));
+        assert!(prompt.contains("FIRST"));
     }
 
     #[test]
@@ -1360,6 +1499,24 @@ mod tests {
             confidence: 0.0,
         };
         assert_eq!(determine_recovery_strategy(&agent, &report), "escalation");
+    }
+
+    #[test]
+    fn test_parse_aggregation_output_complete() {
+        let output = r#"{"complete": true, "coverage_pct": 95, "missing_items": [], "summary": "All tasks covered"}"#;
+        let result = parse_aggregation_output(output).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.coverage_pct, 95);
+        assert!(result.missing_items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_aggregation_output_incomplete() {
+        let output = r#"{"complete": false, "coverage_pct": 40, "missing_items": ["auth module", "tests"], "summary": "Significant gaps"}"#;
+        let result = parse_aggregation_output(output).unwrap();
+        assert!(!result.complete);
+        assert_eq!(result.coverage_pct, 40);
+        assert_eq!(result.missing_items.len(), 2);
     }
 
     fn make_test_agent(succession_count: i64) -> SwarmAgent {

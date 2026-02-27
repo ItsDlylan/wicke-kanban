@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO tasks (id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, sort_order, plan_status, is_human)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, is_human as \"is_human!: bool\", routing_decision, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, is_human as \"is_human!: bool\", routing_decision, interview_data, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -69,18 +69,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "interview_data",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 15,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 11
+      "Right": 1
     },
     "nullable": [
       true,
@@ -96,9 +101,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "dc90fdf28b418f887bcda000caffa5baf7038fa0ea19b6fddf4de0be65b81337"
+  "hash": "9ba97c8e5bfc9c5ceb535acd908669d88ac70dfd11594288967c5e227a9b7ec9"
 }

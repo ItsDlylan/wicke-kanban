@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, is_human as \"is_human!: bool\", routing_decision, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               ORDER BY created_at ASC",
+  "query": "UPDATE tasks\n               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7\n               WHERE id = $1 AND project_id = $2\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", parent_task_id as \"parent_task_id: Uuid\", sort_order as \"sort_order!: i32\", plan, plan_status, is_human as \"is_human!: bool\", routing_decision, interview_data, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
   "describe": {
     "columns": [
       {
@@ -69,18 +69,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "interview_data",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 15,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 7
     },
     "nullable": [
       true,
@@ -96,9 +101,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "31611984e476ccf8a51a90f37c4968ac351a403658ed89492ab4116b7f2d969d"
+  "hash": "291d93a1bc625eb952f4c16baaafc558cf400192afc170ad43e72cc8ab5c8ace"
 }

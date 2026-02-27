@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE tasks SET interview_data = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d82d923724d0e5cd56f45f12ffb69e9ce9fe0cd152166ee42aa705c601f4ee41"
+}

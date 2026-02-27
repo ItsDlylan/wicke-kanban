@@ -55,6 +55,7 @@ pub struct Task {
     pub plan_status: Option<String>,
     pub is_human: bool,
     pub routing_decision: Option<String>,
+    pub interview_data: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -172,6 +173,7 @@ impl Task {
   t.plan_status                   AS "plan_status: String",
   t.is_human                      AS "is_human!: bool",
   t.routing_decision,
+  t.interview_data,
 
   CASE WHEN EXISTS (
     SELECT 1
@@ -237,6 +239,7 @@ ORDER BY t.created_at DESC"#,
                     plan_status: rec.plan_status,
                     is_human: rec.is_human,
                     routing_decision: rec.routing_decision,
+                    interview_data: rec.interview_data,
                     created_at: rec.created_at,
                     updated_at: rec.updated_at,
                 },
@@ -254,7 +257,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                ORDER BY created_at ASC"#
         )
@@ -265,7 +268,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE id = $1"#,
             id
@@ -277,7 +280,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -299,7 +302,7 @@ ORDER BY t.created_at DESC"#,
             Task,
             r#"INSERT INTO tasks (id, project_id, title, description, status, task_type, parent_workspace_id, parent_task_id, sort_order, plan_status, is_human)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             task_id,
             data.project_id,
             data.title,
@@ -331,7 +334,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             project_id,
             title,
@@ -423,7 +426,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,
@@ -476,7 +479,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.task_type as "task_type!: TaskType", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.plan, t.plan_status, t.is_human as "is_human!: bool", t.routing_decision, t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT t.id as "id!: Uuid", t.project_id as "project_id!: Uuid", t.title, t.description, t.status as "status!: TaskStatus", t.task_type as "task_type!: TaskType", t.parent_workspace_id as "parent_workspace_id: Uuid", t.parent_task_id as "parent_task_id: Uuid", t.sort_order as "sort_order!: i32", t.plan, t.plan_status, t.is_human as "is_human!: bool", t.routing_decision, t.interview_data, t.created_at as "created_at!: DateTime<Utc>", t.updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks t
                WHERE t.parent_workspace_id = $1
                  AND t.status = 'ready'
@@ -518,7 +521,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", routing_decision, interview_data, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
                WHERE parent_task_id = $1
                ORDER BY sort_order ASC"#,
@@ -579,6 +582,22 @@ ORDER BY t.created_at DESC"#,
         Ok(())
     }
 
+    /// Update the interview data JSON for a task (section 6.3.2).
+    pub async fn update_interview_data(
+        pool: &SqlitePool,
+        id: Uuid,
+        interview_data: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE tasks SET interview_data = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            id,
+            interview_data
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Update only the plan_status for a task.
     pub async fn update_plan_status(
         pool: &SqlitePool,
@@ -605,7 +624,7 @@ ORDER BY t.created_at DESC"#,
                       parent_workspace_id as "parent_workspace_id: Uuid",
                       parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32",
                       plan, plan_status, is_human as "is_human!: bool",
-                      routing_decision,
+                      routing_decision, interview_data,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks WHERE plan_status = 'generating'"#
@@ -635,7 +654,7 @@ ORDER BY t.created_at DESC"#,
                       parent_workspace_id as "parent_workspace_id: Uuid",
                       parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32",
                       plan, plan_status, is_human as "is_human!: bool",
-                      routing_decision,
+                      routing_decision, interview_data,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM tasks
