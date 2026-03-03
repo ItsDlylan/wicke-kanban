@@ -19,6 +19,7 @@ use db::{
             CreateExecutionProcessRepoState, ExecutionProcessRepoState,
         },
         merge::Merge,
+        project::Project,
         project_repo::ProjectRepo,
         repo::Repo,
         session::{CreateSession, Session, SessionError},
@@ -61,8 +62,10 @@ use utils::{
 use uuid::Uuid;
 
 use crate::services::{
-    git_host::GitHostProvider, notification::NotificationService,
-    workspace_manager::WorkspaceError as WorkspaceManagerError, worktree_manager::WorktreeError,
+    git_host::GitHostProvider,
+    notification::NotificationService,
+    workspace_manager::{WorkspaceError as WorkspaceManagerError, WorkspaceManager},
+    worktree_manager::WorktreeError,
 };
 pub type ContainerRef = String;
 
@@ -639,6 +642,34 @@ pub trait ContainerService {
                 .to_string();
 
             Repo::update_name(pool, repo.id, &name, &name).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Backfill worktree_base_dir for repos that don't have it set yet.
+    async fn backfill_worktree_base_dirs(&self) -> Result<(), ContainerError> {
+        let pool = &self.db().pool;
+        let projects = Project::find_all(pool).await?;
+
+        let mut count = 0u32;
+        for project in &projects {
+            let repos = ProjectRepo::find_repos_for_project(pool, project.id).await?;
+            if let Some(primary_repo) = repos.first() {
+                if primary_repo.worktree_base_dir.is_none() {
+                    let base_dir = WorkspaceManager::get_project_workspace_base_dir(
+                        &project.name,
+                        &primary_repo.path,
+                    );
+                    Repo::set_worktree_base_dir(pool, primary_repo.id, &base_dir.to_string_lossy())
+                        .await?;
+                    count += 1;
+                }
+            }
+        }
+
+        if count > 0 {
+            tracing::info!("Backfilled worktree_base_dir for {} repos", count);
         }
 
         Ok(())
@@ -1499,33 +1530,18 @@ pub trait ContainerService {
         Ok(execution_process)
     }
 
-    /// Start a lightweight plan workspace that reuses the repo directory directly
-    /// (no git worktree), then launches an interactive Claude session in plan mode.
+    /// Start a lightweight plan workspace that creates an isolated directory with symlinks
+    /// to the actual repos, then launches an interactive Claude session in plan mode.
     async fn start_plan_workspace(
         &self,
         task: &Task,
-        repo_path: &str,
+        _repo_path: &str,
         prompt: String,
     ) -> Result<ExecutionProcess, ContainerError> {
         let pool = &self.db().pool;
         let workspace_id = Uuid::new_v4();
 
-        // The workspace model assumes container_ref is a parent directory containing
-        // repo subdirectories (container_ref/repo.name = repo path). Compute the parent
-        // of the repo path so that path joins work correctly throughout the system.
-        let repo_pathbuf = std::path::PathBuf::from(repo_path);
-        let container_dir = repo_pathbuf
-            .parent()
-            .ok_or_else(|| {
-                ContainerError::Other(anyhow!(
-                    "Cannot determine parent directory of repo path: {}",
-                    repo_path
-                ))
-            })?
-            .to_string_lossy()
-            .to_string();
-
-        // Associate project repos
+        // Fetch repos first — needed for workspace dir computation
         let repos = ProjectRepo::find_repos_for_project(pool, task.project_id).await?;
         if repos.is_empty() {
             return Err(ContainerError::Other(anyhow!(
@@ -1534,10 +1550,64 @@ pub trait ContainerService {
             )));
         }
 
+        // Fetch project for workspace base dir computation
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or_else(|| {
+                ContainerError::Other(anyhow!("Project {} not found", task.project_id))
+            })?;
+
+        // Create an isolated workspace directory under the project worktree base dir.
+        // This ensures cleanup only ever deletes directories we own.
+        let primary_repo_path = Path::new(&repos[0].path);
+        let base_dir =
+            WorkspaceManager::get_project_workspace_base_dir(&project.name, primary_repo_path);
+        let workspace_dir = base_dir.join(format!("plan-{}", short_uuid(&workspace_id)));
+
+        // Backfill worktree_base_dir if not yet set on the primary repo
+        if repos[0].worktree_base_dir.is_none() {
+            if let Err(e) =
+                Repo::set_worktree_base_dir(pool, repos[0].id, &base_dir.to_string_lossy()).await
+            {
+                tracing::warn!(
+                    "Failed to set worktree_base_dir for repo {}: {}",
+                    repos[0].id,
+                    e
+                );
+            }
+        }
+
+        tokio::fs::create_dir_all(&workspace_dir)
+            .await
+            .map_err(|e| {
+                ContainerError::Other(anyhow!(
+                    "Failed to create plan workspace directory {}: {}",
+                    workspace_dir.display(),
+                    e
+                ))
+            })?;
+
+        // Symlink each repo into the workspace dir so the executor sees
+        // workspace_dir/repo_name pointing to the actual repo
+        for repo in &repos {
+            let link_path = workspace_dir.join(&repo.name);
+            let target = Path::new(&repo.path);
+            tokio::fs::symlink(target, &link_path).await.map_err(|e| {
+                ContainerError::Other(anyhow!(
+                    "Failed to symlink {} -> {}: {}",
+                    link_path.display(),
+                    target.display(),
+                    e
+                ))
+            })?;
+        }
+
+        let container_dir = workspace_dir.to_string_lossy().to_string();
+
         // Use repo name as agent_working_dir so the executor runs inside the repo
         let agent_working_dir = repos[0].name.clone();
 
-        // Create workspace record — no git worktree, point container_ref at repo parent
+        // Create workspace record pointing container_ref at the isolated directory
         let workspace = Workspace::create(
             pool,
             &CreateWorkspace {
@@ -1549,7 +1619,7 @@ pub trait ContainerService {
         )
         .await?;
 
-        // Set container_ref to repo parent dir (skip self.create() / worktree)
+        // Set container_ref to our isolated workspace directory
         Workspace::update_container_ref(pool, workspace.id, &container_dir).await?;
 
         let workspace_repos: Vec<CreateWorkspaceRepo> = repos

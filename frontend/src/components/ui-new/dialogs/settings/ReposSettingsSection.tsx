@@ -28,6 +28,7 @@ interface RepoScriptsFormState {
   display_name: string;
   default_working_dir: string;
   default_target_branch: string;
+  worktree_base_dir: string;
   setup_script: string;
   parallel_setup_script: boolean;
   cleanup_script: string;
@@ -41,6 +42,7 @@ function repoToFormState(repo: Repo): RepoScriptsFormState {
     display_name: repo.display_name,
     default_working_dir: repo.default_working_dir ?? '',
     default_target_branch: repo.default_target_branch ?? '',
+    worktree_base_dir: repo.worktree_base_dir ?? '',
     setup_script: repo.setup_script ?? '',
     parallel_setup_script: repo.parallel_setup_script,
     cleanup_script: repo.cleanup_script ?? '',
@@ -164,6 +166,7 @@ export function ReposSettingsSection({
         display_name: draft.display_name.trim() || null,
         default_working_dir: draft.default_working_dir.trim() || null,
         default_target_branch: draft.default_target_branch.trim() || null,
+        worktree_base_dir: draft.worktree_base_dir.trim() || null,
         setup_script: draft.setup_script.trim() || null,
         cleanup_script: draft.cleanup_script.trim() || null,
         archive_script: draft.archive_script.trim() || null,
@@ -322,6 +325,21 @@ export function ReposSettingsSection({
                 }
                 placeholder={t(
                   'settings.repos.general.defaultWorkingDir.placeholder'
+                )}
+              />
+            </SettingsField>
+
+            <SettingsField
+              label={t('settings.repos.general.worktreeBaseDir.label')}
+              description={t('settings.repos.general.worktreeBaseDir.helper')}
+            >
+              <SettingsInput
+                value={draft.worktree_base_dir}
+                onChange={(value) =>
+                  updateDraft({ worktree_base_dir: value })
+                }
+                placeholder={t(
+                  'settings.repos.general.worktreeBaseDir.placeholder'
                 )}
               />
             </SettingsField>

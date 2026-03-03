@@ -15,6 +15,7 @@ use uuid::Uuid;
 use super::{
     file_search::{FileSearchCache, SearchQuery},
     repo::{RepoError, RepoService},
+    workspace_manager::WorkspaceManager,
 };
 
 #[derive(Debug, Error)]
@@ -103,11 +104,29 @@ impl ProjectService {
             .await
             .map_err(|e| ProjectServiceError::Project(ProjectError::CreateFailed(e.to_string())))?;
 
-        for repo in &normalized_repos {
+        for (i, repo) in normalized_repos.iter().enumerate() {
             let repo_entity =
                 Repo::find_or_create(pool, Path::new(&repo.git_repo_path), &repo.display_name)
                     .await?;
             ProjectRepo::create(pool, project.id, repo_entity.id).await?;
+
+            // Set worktree_base_dir on the primary (first) repo
+            if i == 0 && repo_entity.worktree_base_dir.is_none() {
+                let base_dir = WorkspaceManager::get_project_workspace_base_dir(
+                    &payload.name,
+                    &repo_entity.path,
+                );
+                if let Err(e) =
+                    Repo::set_worktree_base_dir(pool, repo_entity.id, &base_dir.to_string_lossy())
+                        .await
+                {
+                    tracing::warn!(
+                        "Failed to set worktree_base_dir for repo {}: {}",
+                        repo_entity.id,
+                        e
+                    );
+                }
+            }
         }
 
         Ok(project)
@@ -157,6 +176,26 @@ impl ProjectService {
             }
             _ => ProjectServiceError::RepositoryNotFound,
         })?;
+
+        // Set worktree_base_dir if this is the first repo or not yet set
+        if repository.worktree_base_dir.is_none() {
+            if let Ok(Some(project)) = Project::find_by_id(pool, project_id).await {
+                let base_dir = WorkspaceManager::get_project_workspace_base_dir(
+                    &project.name,
+                    &repository.path,
+                );
+                if let Err(e) =
+                    Repo::set_worktree_base_dir(pool, repository.id, &base_dir.to_string_lossy())
+                        .await
+                {
+                    tracing::warn!(
+                        "Failed to set worktree_base_dir for repo {}: {}",
+                        repository.id,
+                        e
+                    );
+                }
+            }
+        }
 
         tracing::info!(
             "Added repository {} to project {} (path: {})",

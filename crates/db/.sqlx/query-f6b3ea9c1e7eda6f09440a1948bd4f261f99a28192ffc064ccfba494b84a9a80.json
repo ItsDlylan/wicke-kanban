@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE repos SET worktree_base_dir = $1, updated_at = datetime('now', 'subsec') WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f6b3ea9c1e7eda6f09440a1948bd4f261f99a28192ffc064ccfba494b84a9a80"
+}

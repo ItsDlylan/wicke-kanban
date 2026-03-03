@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT worktree_base_dir FROM repos WHERE worktree_base_dir IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "worktree_base_dir",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5088f72962c8b872e9ac052b30f3e570ee6a1e2aa82cbfe0a192a9a182d156ed"
+}

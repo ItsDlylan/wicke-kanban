@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT r.id as \"id!: Uuid\",\n                      r.path,\n                      r.name,\n                      r.display_name,\n                      r.setup_script,\n                      r.cleanup_script,\n                      r.archive_script,\n                      r.copy_files,\n                      r.parallel_setup_script as \"parallel_setup_script!: bool\",\n                      r.dev_server_script,\n                      r.default_target_branch,\n                      r.default_working_dir,\n                      r.created_at as \"created_at!: DateTime<Utc>\",\n                      r.updated_at as \"updated_at!: DateTime<Utc>\",\n                      wr.target_branch\n               FROM repos r\n               JOIN workspace_repos wr ON r.id = wr.repo_id\n               WHERE wr.workspace_id = $1\n               ORDER BY r.display_name ASC",
+  "query": "UPDATE repos\n               SET display_name = $1,\n                   setup_script = $2,\n                   cleanup_script = $3,\n                   archive_script = $4,\n                   copy_files = $5,\n                   parallel_setup_script = $6,\n                   dev_server_script = $7,\n                   default_target_branch = $8,\n                   default_working_dir = $9,\n                   worktree_base_dir = $10,\n                   updated_at = datetime('now', 'subsec')\n               WHERE id = $11\n               RETURNING id as \"id!: Uuid\",\n                         path,\n                         name,\n                         display_name,\n                         setup_script,\n                         cleanup_script,\n                         archive_script,\n                         copy_files,\n                         parallel_setup_script as \"parallel_setup_script!: bool\",\n                         dev_server_script,\n                         default_target_branch,\n                         default_working_dir,\n                         worktree_base_dir,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
   "describe": {
     "columns": [
       {
@@ -64,23 +64,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "worktree_base_dir",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "target_branch",
+        "name": "updated_at!: DateTime<Utc>",
         "ordinal": 14,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 11
     },
     "nullable": [
       true,
@@ -95,10 +95,10 @@
       true,
       true,
       true,
-      false,
+      true,
       false,
       false
     ]
   },
-  "hash": "9f783d1b275548a59429235991e5299b7aaf071effebbd62f006404b3ce83dc8"
+  "hash": "b3ee0ba621d1c10e94fe9e89abf3c808b763b44b76bad982981dddf96eaf6fc4"
 }

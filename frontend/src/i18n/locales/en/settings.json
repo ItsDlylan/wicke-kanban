@@ -442,6 +442,11 @@
           "placeholder": "e.g., packages/frontend",
           "helper": "Subdirectory relative to the repository root where the coding agent runs for single-repo workspaces. Set when the workspace is created. Leave empty to use the repository root."
         },
+        "worktreeBaseDir": {
+          "label": "Worktree Base Directory",
+          "placeholder": "e.g., /Users/me/Projects/my-repo-worktrees",
+          "helper": "The directory where worktrees for this repository are created. This is used by the safety check when cleaning up workspaces."
+        },
         "defaultTargetBranch": {
           "label": "Default Target Branch",
           "placeholder": "Select a branch",

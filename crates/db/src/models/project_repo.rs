@@ -85,6 +85,7 @@ impl ProjectRepo {
                       r.dev_server_script,
                       r.default_target_branch,
                       r.default_working_dir,
+                      r.worktree_base_dir,
                       r.created_at as "created_at!: DateTime<Utc>",
                       r.updated_at as "updated_at!: DateTime<Utc>"
                FROM repos r

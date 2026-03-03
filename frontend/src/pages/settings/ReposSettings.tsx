@@ -31,6 +31,7 @@ import type { Repo, UpdateRepo } from 'shared/types';
 
 interface RepoScriptsFormState {
   display_name: string;
+  worktree_base_dir: string;
   setup_script: string;
   parallel_setup_script: boolean;
   cleanup_script: string;
@@ -41,6 +42,7 @@ interface RepoScriptsFormState {
 function repoToFormState(repo: Repo): RepoScriptsFormState {
   return {
     display_name: repo.display_name,
+    worktree_base_dir: repo.worktree_base_dir ?? '',
     setup_script: repo.setup_script ?? '',
     parallel_setup_script: repo.parallel_setup_script,
     cleanup_script: repo.cleanup_script ?? '',
@@ -177,6 +179,7 @@ export function ReposSettings() {
     try {
       const updateData: UpdateRepo = {
         display_name: draft.display_name.trim() || null,
+        worktree_base_dir: draft.worktree_base_dir.trim() || null,
         setup_script: draft.setup_script.trim() || null,
         cleanup_script: draft.cleanup_script.trim() || null,
         copy_files: draft.copy_files.trim() || null,
@@ -324,6 +327,27 @@ export function ReposSettings() {
                 <div className="text-sm text-muted-foreground font-mono bg-muted px-3 py-2 rounded-md">
                   {selectedRepo.path}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="worktree-base-dir">
+                  {t('settings.repos.general.worktreeBaseDir.label')}
+                </Label>
+                <Input
+                  id="worktree-base-dir"
+                  type="text"
+                  value={draft.worktree_base_dir}
+                  onChange={(e) =>
+                    updateDraft({ worktree_base_dir: e.target.value })
+                  }
+                  placeholder={t(
+                    'settings.repos.general.worktreeBaseDir.placeholder'
+                  )}
+                  className="font-mono"
+                />
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.repos.general.worktreeBaseDir.helper')}
+                </p>
               </div>
             </CardContent>
           </Card>

@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use db::models::{
     project::Project, project_repo::ProjectRepo, repo::Repo, workspace::Workspace as DbWorkspace,
@@ -309,15 +312,33 @@ impl WorkspaceManager {
             Self::cleanup_orphans_in_directory(db, &current_dir).await;
         }
 
-        // Scan project-relative worktree directories
+        // Primary source: stored worktree_base_dir values from repos
+        let mut scanned_dirs = HashSet::new();
+        scanned_dirs.insert(default_dir.clone());
+        scanned_dirs.insert(current_dir.clone());
+
+        if let Ok(stored_dirs) = Repo::list_worktree_base_dirs(db).await {
+            for dir_str in stored_dirs {
+                let dir = PathBuf::from(&dir_str);
+                if scanned_dirs.insert(dir.clone()) {
+                    Self::cleanup_orphans_in_directory(db, &dir).await;
+                }
+            }
+        }
+
+        // Fallback: scan project-relative worktree directories for repos not yet backfilled
         if let Ok(projects) = Project::find_all(db).await {
             for project in projects {
                 if let Ok(repos) = ProjectRepo::find_repos_for_project(db, project.id).await {
                     if let Some(primary_repo) = repos.first() {
-                        let project_dir =
-                            Self::get_project_workspace_base_dir(&project.name, &primary_repo.path);
-                        if project_dir != default_dir && project_dir != current_dir {
-                            Self::cleanup_orphans_in_directory(db, &project_dir).await;
+                        if primary_repo.worktree_base_dir.is_none() {
+                            let project_dir = Self::get_project_workspace_base_dir(
+                                &project.name,
+                                &primary_repo.path,
+                            );
+                            if scanned_dirs.insert(project_dir.clone()) {
+                                Self::cleanup_orphans_in_directory(db, &project_dir).await;
+                            }
                         }
                     }
                 }

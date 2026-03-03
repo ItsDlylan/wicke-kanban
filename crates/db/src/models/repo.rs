@@ -30,6 +30,7 @@ pub struct Repo {
     pub dev_server_script: Option<String>,
     pub default_target_branch: Option<String>,
     pub default_working_dir: Option<String>,
+    pub worktree_base_dir: Option<String>,
     #[ts(type = "Date")]
     pub created_at: DateTime<Utc>,
     #[ts(type = "Date")]
@@ -109,6 +110,14 @@ pub struct UpdateRepo {
     )]
     #[ts(optional, type = "string | null")]
     pub default_working_dir: Option<Option<String>>,
+
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    #[ts(optional, type = "string | null")]
+    pub worktree_base_dir: Option<Option<String>>,
 }
 
 impl Repo {
@@ -129,6 +138,7 @@ impl Repo {
                       dev_server_script,
                       default_target_branch,
                       default_working_dir,
+                      worktree_base_dir,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM repos
@@ -170,6 +180,7 @@ impl Repo {
                       dev_server_script,
                       default_target_branch,
                       default_working_dir,
+                      worktree_base_dir,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM repos
@@ -228,6 +239,7 @@ impl Repo {
                          dev_server_script,
                          default_target_branch,
                          default_working_dir,
+                         worktree_base_dir,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -265,6 +277,7 @@ impl Repo {
                       dev_server_script,
                       default_target_branch,
                       default_working_dir,
+                      worktree_base_dir,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM repos
@@ -291,6 +304,7 @@ impl Repo {
                       r.dev_server_script,
                       r.default_target_branch,
                       r.default_working_dir,
+                      r.worktree_base_dir,
                       r.created_at as "created_at!: DateTime<Utc>",
                       r.updated_at as "updated_at!: DateTime<Utc>"
                FROM repos r
@@ -353,6 +367,10 @@ impl Repo {
             None => existing.default_working_dir,
             Some(v) => v.clone(),
         };
+        let worktree_base_dir = match &payload.worktree_base_dir {
+            None => existing.worktree_base_dir,
+            Some(v) => v.clone(),
+        };
 
         sqlx::query_as!(
             Repo,
@@ -366,8 +384,9 @@ impl Repo {
                    dev_server_script = $7,
                    default_target_branch = $8,
                    default_working_dir = $9,
+                   worktree_base_dir = $10,
                    updated_at = datetime('now', 'subsec')
-               WHERE id = $10
+               WHERE id = $11
                RETURNING id as "id!: Uuid",
                          path,
                          name,
@@ -380,6 +399,7 @@ impl Repo {
                          dev_server_script,
                          default_target_branch,
                          default_working_dir,
+                         worktree_base_dir,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             display_name,
@@ -391,10 +411,35 @@ impl Repo {
             dev_server_script,
             default_target_branch,
             default_working_dir,
+            worktree_base_dir,
             id
         )
         .fetch_one(pool)
         .await
         .map_err(RepoError::from)
+    }
+
+    pub async fn set_worktree_base_dir(
+        pool: &SqlitePool,
+        id: Uuid,
+        dir: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE repos SET worktree_base_dir = $1, updated_at = datetime('now', 'subsec') WHERE id = $2",
+            dir,
+            id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_worktree_base_dirs(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+        let rows = sqlx::query_scalar!(
+            "SELECT DISTINCT worktree_base_dir FROM repos WHERE worktree_base_dir IS NOT NULL"
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.into_iter().flatten().collect())
     }
 }

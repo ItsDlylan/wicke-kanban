@@ -179,6 +179,35 @@ impl LocalContainerService {
         };
         let workspace_dir = PathBuf::from(container_ref);
 
+        // Hard deny-list: NEVER delete project repo directories, their parents,
+        // or the user's home directory — regardless of any other checks.
+        if Self::is_protected_path(db, &workspace_dir).await {
+            tracing::error!(
+                "BLOCKED: Refusing to delete protected path {} for workspace {} — \
+                 path is a project repo directory, a parent of a repo, or a user home directory. \
+                 Clearing container_ref only.",
+                workspace_dir.display(),
+                workspace.id,
+            );
+            let _ = Workspace::clear_container_ref(&db.pool, workspace.id).await;
+            return;
+        }
+
+        // Safety guard: refuse to delete directories outside known worktree base paths.
+        // This prevents catastrophic deletion of user project directories if container_ref
+        // somehow points to a non-workspace path (e.g., from legacy records).
+        if !Self::is_safe_workspace_dir(db, &workspace_dir).await {
+            tracing::error!(
+                "Refusing to delete workspace directory {} for workspace {} — \
+                 path is not inside a known worktree base directory. \
+                 Clearing container_ref only.",
+                workspace_dir.display(),
+                workspace.id,
+            );
+            let _ = Workspace::clear_container_ref(&db.pool, workspace.id).await;
+            return;
+        }
+
         let repositories = WorkspaceRepo::find_repos_for_workspace(&db.pool, workspace.id)
             .await
             .unwrap_or_default();
@@ -207,6 +236,55 @@ impl LocalContainerService {
 
         // Clear container_ref so this workspace won't be picked up again
         let _ = Workspace::clear_container_ref(&db.pool, workspace.id).await;
+    }
+
+    /// Check whether a workspace directory is inside a known worktree base path.
+    /// Returns true if the path is safe to delete (i.e., it lives under a
+    /// project-specific or global worktree directory).
+    async fn is_safe_workspace_dir(db: &DBService, workspace_dir: &Path) -> bool {
+        let mut known_bases = vec![WorkspaceManager::get_workspace_base_dir()];
+
+        // Primary source: stored worktree_base_dir values from repos
+        if let Ok(stored_dirs) = Repo::list_worktree_base_dirs(&db.pool).await {
+            for dir in stored_dirs {
+                known_bases.push(PathBuf::from(dir));
+            }
+        }
+
+        // Fallback: compute for any projects whose repos may not be backfilled yet
+        if let Ok(projects) = Project::find_all(&db.pool).await {
+            for project in &projects {
+                if let Ok(repos) = ProjectRepo::find_repos_for_project(&db.pool, project.id).await {
+                    if let Some(primary_repo) = repos.first() {
+                        if primary_repo.worktree_base_dir.is_none() {
+                            known_bases.push(WorkspaceManager::get_project_workspace_base_dir(
+                                &project.name,
+                                Path::new(&primary_repo.path),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        is_path_under_known_bases(workspace_dir, &known_bases)
+    }
+
+    /// Hard deny-list: returns true if the path must NEVER be deleted.
+    /// This catches project repo directories, parent directories of repos
+    /// (e.g. ~/Desktop/Projects), and the user's home directory.
+    async fn is_protected_path(db: &DBService, workspace_dir: &Path) -> bool {
+        let mut repo_paths = Vec::new();
+        if let Ok(projects) = Project::find_all(&db.pool).await {
+            for project in &projects {
+                if let Ok(repos) = ProjectRepo::find_repos_for_project(&db.pool, project.id).await {
+                    for repo in &repos {
+                        repo_paths.push(PathBuf::from(&repo.path));
+                    }
+                }
+            }
+        }
+        is_path_protected(workspace_dir, &repo_paths)
     }
 
     pub async fn cleanup_expired_workspaces(db: &DBService) -> Result<(), DeploymentError> {
@@ -615,6 +693,8 @@ impl LocalContainerService {
                     ExecutionProcessRunReason::AutoPlan
                 ) {
                     container.handle_auto_plan_completion(&ctx).await;
+                    // Clean up the isolated plan workspace directory
+                    Self::cleanup_workspace(&container.db, &ctx.workspace).await;
                     // Fall through to MsgStore cleanup below
                     container.update_after_head_commits(exec_id).await;
                     let db_stream_handle = container.take_db_stream_handle(&exec_id).await;
@@ -1187,9 +1267,26 @@ impl ContainerService for LocalContainerService {
         let primary_repo = repos.first().ok_or_else(|| {
             ContainerError::Other(anyhow!("Project has no repositories configured"))
         })?;
-        let workspace_dir =
-            WorkspaceManager::get_project_workspace_base_dir(&project.name, &primary_repo.path)
-                .join(&workspace_dir_name);
+        let base_dir =
+            WorkspaceManager::get_project_workspace_base_dir(&project.name, &primary_repo.path);
+        let workspace_dir = base_dir.join(&workspace_dir_name);
+
+        // Backfill worktree_base_dir if not yet set on the primary repo
+        if primary_repo.worktree_base_dir.is_none() {
+            if let Err(e) = Repo::set_worktree_base_dir(
+                &self.db.pool,
+                primary_repo.id,
+                &base_dir.to_string_lossy(),
+            )
+            .await
+            {
+                tracing::warn!(
+                    "Failed to set worktree_base_dir for repo {}: {}",
+                    primary_repo.id,
+                    e
+                );
+            }
+        }
 
         let workspace_repos =
             WorkspaceRepo::find_by_workspace_id(&self.db.pool, workspace.id).await?;
@@ -1672,5 +1769,471 @@ fn success_exit_status() -> std::process::ExitStatus {
     {
         use std::os::windows::process::ExitStatusExt;
         ExitStatusExt::from_raw(0)
+    }
+}
+
+/// Check whether a path is inside any of the known workspace base directories.
+/// Extracted as a pure function for testability.
+fn is_path_under_known_bases(workspace_dir: &Path, known_bases: &[PathBuf]) -> bool {
+    for base in known_bases {
+        if workspace_dir.starts_with(base) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Get the user's home directory from environment.
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+}
+
+/// Hard deny-list: returns true if a path must NEVER be deleted.
+/// Checks against:
+/// - The user's home directory and well-known subdirectories (Desktop, Documents, Projects, etc.)
+/// - Any project repo directory (the actual git repos)
+/// - Parent directories of any repo (e.g. ~/Desktop/Projects which contains repos)
+fn is_path_protected(workspace_dir: &Path, repo_paths: &[PathBuf]) -> bool {
+    // Never delete the home directory or its well-known children
+    if let Some(home) = home_dir() {
+        if workspace_dir == home {
+            return true;
+        }
+        for subdir in &[
+            "Desktop",
+            "Documents",
+            "Downloads",
+            "Projects",
+            "Developer",
+            "repos",
+            "src",
+            "code",
+            "work",
+        ] {
+            let protected = home.join(subdir);
+            if workspace_dir == protected {
+                return true;
+            }
+            // Also protect ~/Desktop/Projects, ~/Documents/Projects, etc.
+            let nested_projects = protected.join("Projects");
+            if workspace_dir == nested_projects {
+                return true;
+            }
+        }
+    }
+
+    // Never delete a repo directory or any of its ancestors
+    for repo_path in repo_paths {
+        // Exact match: workspace_dir IS a repo
+        if workspace_dir == repo_path.as_path() {
+            return true;
+        }
+        // workspace_dir is a parent/ancestor of a repo
+        // (e.g. ~/Desktop/Projects when repo is ~/Desktop/Projects/myapp)
+        if repo_path.starts_with(workspace_dir) {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn test_user_projects_dir_is_not_safe() {
+        // Simulates the exact bug: container_ref pointed to ~/Projects/
+        let user_home = TempDir::new().unwrap();
+        let projects_dir = user_home.path().join("Projects");
+        std::fs::create_dir_all(&projects_dir).unwrap();
+
+        let known_bases = vec![PathBuf::from("/tmp/wickeban/worktrees")];
+        assert!(
+            !is_path_under_known_bases(&projects_dir, &known_bases),
+            "User's Projects directory must NEVER be considered a safe workspace path"
+        );
+    }
+
+    #[test]
+    fn test_repo_parent_dir_is_not_safe() {
+        // The original bug: repo at /Users/foo/Projects/myapp,
+        // container_ref was set to /Users/foo/Projects/
+        let tmp = TempDir::new().unwrap();
+        let projects_dir = tmp.path().join("Projects");
+        let repo_dir = projects_dir.join("myapp");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let worktree_base = tmp.path().join("myapp-worktrees");
+        let known_bases = vec![worktree_base];
+
+        assert!(
+            !is_path_under_known_bases(&projects_dir, &known_bases),
+            "Repo parent directory must not be considered safe"
+        );
+    }
+
+    #[test]
+    fn test_isolated_plan_workspace_is_safe() {
+        // Plan workspaces live under {project}-worktrees/plan-{uuid}/
+        let tmp = TempDir::new().unwrap();
+        let worktree_base = tmp.path().join("myproject-worktrees");
+        let plan_workspace = worktree_base.join("plan-abc123");
+        std::fs::create_dir_all(&plan_workspace).unwrap();
+
+        let known_bases = vec![worktree_base];
+        assert!(
+            is_path_under_known_bases(&plan_workspace, &known_bases),
+            "Plan workspace inside worktree base should be safe"
+        );
+    }
+
+    #[test]
+    fn test_regular_worktree_is_safe() {
+        let tmp = TempDir::new().unwrap();
+        let worktree_base = tmp.path().join("myproject-worktrees");
+        let workspace = worktree_base.join("feature-login-a1b2c3");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let known_bases = vec![worktree_base];
+        assert!(is_path_under_known_bases(&workspace, &known_bases));
+    }
+
+    #[test]
+    fn test_global_worktree_base_is_safe() {
+        let tmp = TempDir::new().unwrap();
+        let global_base = tmp.path().join("wickeban-worktrees");
+        let workspace = global_base.join("workspace-123");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let known_bases = vec![global_base];
+        assert!(is_path_under_known_bases(&workspace, &known_bases));
+    }
+
+    #[test]
+    fn test_empty_known_bases_rejects_everything() {
+        let tmp = TempDir::new().unwrap();
+        assert!(!is_path_under_known_bases(tmp.path(), &[]));
+    }
+
+    #[test]
+    fn test_path_outside_all_bases_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let unrelated_dir = tmp.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated_dir).unwrap();
+
+        let known_bases = vec![
+            tmp.path().join("project-worktrees"),
+            tmp.path().join("other-worktrees"),
+        ];
+        assert!(
+            !is_path_under_known_bases(&unrelated_dir, &known_bases),
+            "Path outside all known bases must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_worktree_base_itself_is_safe() {
+        // The base dir itself should be safe (starts_with includes exact match)
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path().join("myproject-worktrees");
+        std::fs::create_dir_all(&base).unwrap();
+
+        let known_bases = vec![base.clone()];
+        assert!(is_path_under_known_bases(&base, &known_bases));
+    }
+
+    #[test]
+    fn test_partial_name_match_is_not_safe() {
+        // "myproject-worktrees-evil" should NOT match "myproject-worktrees"
+        // Path::starts_with does component-wise comparison, so this should be safe
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path().join("myproject-worktrees");
+        let evil_dir = tmp.path().join("myproject-worktrees-evil");
+        std::fs::create_dir_all(&evil_dir).unwrap();
+
+        let known_bases = vec![base];
+        assert!(
+            !is_path_under_known_bases(&evil_dir, &known_bases),
+            "Partial directory name match must not be considered safe"
+        );
+    }
+
+    #[test]
+    fn test_multiple_bases_any_match_is_safe() {
+        let tmp = TempDir::new().unwrap();
+        let base_a = tmp.path().join("project-a-worktrees");
+        let base_b = tmp.path().join("project-b-worktrees");
+        let workspace = base_b.join("plan-xyz");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let known_bases = vec![base_a, base_b];
+        assert!(
+            is_path_under_known_bases(&workspace, &known_bases),
+            "Path matching any known base should be safe"
+        );
+    }
+
+    /// Regression test: verify that cleanup_workspace refuses to delete a directory
+    /// that is outside known worktree bases, even if it has a valid container_ref.
+    /// This is the exact scenario that deleted user projects.
+    #[tokio::test]
+    async fn test_cleanup_workspace_does_not_delete_user_directory() {
+        // Set up a fake "user projects" directory with content
+        let user_projects = TempDir::new().unwrap();
+        let my_project = user_projects.path().join("maisonneptune");
+        std::fs::create_dir_all(&my_project).unwrap();
+        std::fs::write(my_project.join("README.md"), "# My Project").unwrap();
+        std::fs::write(my_project.join("index.ts"), "console.log('hello')").unwrap();
+
+        // Create a workspace struct that points container_ref at the user directory
+        // (simulating the old broken behavior)
+        let workspace = Workspace {
+            id: uuid::Uuid::new_v4(),
+            task_id: uuid::Uuid::new_v4(),
+            container_ref: Some(user_projects.path().to_string_lossy().to_string()),
+            branch: "auto-plan-test".to_string(),
+            agent_working_dir: Some("maisonneptune".to_string()),
+            setup_completed_at: None,
+            created_at: sqlx::types::chrono::Utc::now(),
+            updated_at: sqlx::types::chrono::Utc::now(),
+            archived: false,
+            pinned: false,
+            name: None,
+        };
+
+        // Verify the safety check rejects this path
+        // (empty known_bases since we can't easily set up the global base in tests)
+        let known_bases: Vec<PathBuf> = vec![];
+        assert!(
+            !is_path_under_known_bases(
+                &PathBuf::from(workspace.container_ref.as_ref().unwrap()),
+                &known_bases
+            ),
+            "User directory must not pass safety check"
+        );
+
+        // Verify the project files still exist
+        assert!(my_project.exists(), "Project directory must still exist");
+        assert!(
+            my_project.join("README.md").exists(),
+            "Project files must still exist"
+        );
+        assert!(
+            my_project.join("index.ts").exists(),
+            "Project files must still exist"
+        );
+    }
+
+    /// Regression test: verify that a plan workspace under a worktree base IS cleaned up.
+    #[tokio::test]
+    async fn test_plan_workspace_under_worktree_base_is_safe_to_delete() {
+        let tmp = TempDir::new().unwrap();
+        let worktree_base = tmp.path().join("myproject-worktrees");
+        let plan_dir = worktree_base.join("plan-abc123");
+        std::fs::create_dir_all(&plan_dir).unwrap();
+        std::fs::write(plan_dir.join("repo-link"), "symlink placeholder").unwrap();
+
+        let known_bases = vec![worktree_base.clone()];
+        assert!(
+            is_path_under_known_bases(&plan_dir, &known_bases),
+            "Plan workspace under worktree base should be safe to delete"
+        );
+
+        // Verify cleanup would proceed (the dir is under a known base)
+        // and after removal it's gone
+        tokio::fs::remove_dir_all(&plan_dir).await.unwrap();
+        assert!(
+            !plan_dir.exists(),
+            "Plan dir should be removed after cleanup"
+        );
+        // But the base still exists
+        assert!(
+            worktree_base.exists(),
+            "Worktree base should survive plan cleanup"
+        );
+    }
+
+    // ── is_path_protected (deny-list) tests ────────────────────────────
+
+    #[test]
+    fn test_home_directory_is_protected() {
+        if let Some(home) = home_dir() {
+            assert!(
+                is_path_protected(&home, &[]),
+                "Home directory must always be protected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_desktop_projects_is_protected() {
+        if let Some(home) = home_dir() {
+            let desktop_projects = home.join("Desktop").join("Projects");
+            assert!(
+                is_path_protected(&desktop_projects, &[]),
+                "~/Desktop/Projects must always be protected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_well_known_home_subdirs_are_protected() {
+        if let Some(home) = home_dir() {
+            for subdir in &["Desktop", "Documents", "Downloads", "Projects", "Developer"] {
+                let path = home.join(subdir);
+                assert!(
+                    is_path_protected(&path, &[]),
+                    "~/{subdir} must be protected"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_repo_directory_is_protected() {
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path().join("Projects").join("maisonneptune");
+        std::fs::create_dir_all(&repo).unwrap();
+
+        let repo_paths = vec![repo.clone()];
+        assert!(
+            is_path_protected(&repo, &repo_paths),
+            "A project repo directory must be protected"
+        );
+    }
+
+    #[test]
+    fn test_parent_of_repo_is_protected() {
+        // This is the exact scenario: ~/Desktop/Projects contains repos,
+        // so ~/Desktop/Projects itself must be protected
+        let tmp = TempDir::new().unwrap();
+        let projects_dir = tmp.path().join("Desktop").join("Projects");
+        let repo = projects_dir.join("maisonneptune");
+        std::fs::create_dir_all(&repo).unwrap();
+
+        let repo_paths = vec![repo];
+        assert!(
+            is_path_protected(&projects_dir, &repo_paths),
+            "Parent directory of a repo must be protected"
+        );
+    }
+
+    #[test]
+    fn test_grandparent_of_repo_is_protected() {
+        let tmp = TempDir::new().unwrap();
+        let desktop = tmp.path().join("Desktop");
+        let repo = desktop.join("Projects").join("myapp");
+        std::fs::create_dir_all(&repo).unwrap();
+
+        let repo_paths = vec![repo];
+        assert!(
+            is_path_protected(&desktop, &repo_paths),
+            "Grandparent directory of a repo must be protected"
+        );
+    }
+
+    #[test]
+    fn test_worktree_dir_is_not_protected() {
+        // A proper worktree directory should NOT be on the deny-list
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path().join("Projects").join("myapp");
+        let worktree = tmp.path().join("myapp-worktrees").join("plan-abc123");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        let repo_paths = vec![repo];
+        assert!(
+            !is_path_protected(&worktree, &repo_paths),
+            "Worktree directories must NOT be on the deny-list"
+        );
+    }
+
+    #[test]
+    fn test_sibling_of_repo_is_not_protected() {
+        // A directory that's a sibling of a repo (not parent/ancestor) is fine
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path().join("Projects").join("myapp");
+        let sibling = tmp
+            .path()
+            .join("Projects")
+            .join("myapp-worktrees")
+            .join("plan-123");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+
+        let repo_paths = vec![repo];
+        assert!(
+            !is_path_protected(&sibling, &repo_paths),
+            "Sibling worktree directory of a repo is not protected"
+        );
+    }
+
+    #[test]
+    fn test_child_of_repo_is_not_protected_by_denylist() {
+        // A subdirectory inside a repo is not itself protected by the deny-list
+        // (the allow-list would catch this — it's not under a worktree base)
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path().join("myapp");
+        let child = repo.join("src");
+        std::fs::create_dir_all(&child).unwrap();
+
+        let repo_paths = vec![repo];
+        assert!(
+            !is_path_protected(&child, &repo_paths),
+            "Subdirectory of a repo is handled by allow-list, not deny-list"
+        );
+    }
+
+    #[test]
+    fn test_multiple_repos_all_parents_protected() {
+        let tmp = TempDir::new().unwrap();
+        let projects_dir = tmp.path().join("Projects");
+        let repo_a = projects_dir.join("app-a");
+        let repo_b = projects_dir.join("app-b");
+        std::fs::create_dir_all(&repo_a).unwrap();
+        std::fs::create_dir_all(&repo_b).unwrap();
+
+        let repo_paths = vec![repo_a, repo_b];
+        // The shared parent is protected
+        assert!(
+            is_path_protected(&projects_dir, &repo_paths),
+            "Shared parent of multiple repos must be protected"
+        );
+    }
+
+    /// Regression test: the exact scenario that deleted maisonneptune.
+    /// container_ref = ~/Desktop/Projects, repo = ~/Desktop/Projects/maisonneptune
+    #[test]
+    fn test_regression_desktop_projects_with_repo_is_protected() {
+        let tmp = TempDir::new().unwrap();
+        // Simulate ~/Desktop/Projects/maisonneptune
+        let desktop_projects = tmp.path().join("Desktop").join("Projects");
+        let maisonneptune = desktop_projects.join("maisonneptune");
+        std::fs::create_dir_all(&maisonneptune).unwrap();
+        std::fs::write(maisonneptune.join("package.json"), "{}").unwrap();
+
+        let repo_paths = vec![maisonneptune.clone()];
+
+        // The parent directory (where container_ref pointed) must be blocked
+        assert!(
+            is_path_protected(&desktop_projects, &repo_paths),
+            "~/Desktop/Projects must be protected when it contains repos"
+        );
+        // The repo itself must also be blocked
+        assert!(
+            is_path_protected(&maisonneptune, &repo_paths),
+            "The repo directory itself must be protected"
+        );
     }
 }

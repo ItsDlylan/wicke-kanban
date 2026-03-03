@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT r.id as \"id!: Uuid\",\n                      r.path,\n                      r.name,\n                      r.display_name,\n                      r.setup_script,\n                      r.cleanup_script,\n                      r.archive_script,\n                      r.copy_files,\n                      r.parallel_setup_script as \"parallel_setup_script!: bool\",\n                      r.dev_server_script,\n                      r.default_target_branch,\n                      r.default_working_dir,\n                      r.created_at as \"created_at!: DateTime<Utc>\",\n                      r.updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM repos r\n               LEFT JOIN (\n                   SELECT repo_id, MAX(updated_at) AS last_used_at\n                   FROM workspace_repos\n                   GROUP BY repo_id\n               ) wr ON wr.repo_id = r.id\n               ORDER BY wr.last_used_at DESC, r.display_name ASC",
+  "query": "SELECT r.id as \"id!: Uuid\",\n                      r.path,\n                      r.name,\n                      r.display_name,\n                      r.setup_script,\n                      r.cleanup_script,\n                      r.archive_script,\n                      r.copy_files,\n                      r.parallel_setup_script as \"parallel_setup_script!: bool\",\n                      r.dev_server_script,\n                      r.default_target_branch,\n                      r.default_working_dir,\n                      r.worktree_base_dir,\n                      r.created_at as \"created_at!: DateTime<Utc>\",\n                      r.updated_at as \"updated_at!: DateTime<Utc>\",\n                      wr.target_branch\n               FROM repos r\n               JOIN workspace_repos wr ON r.id = wr.repo_id\n               WHERE wr.workspace_id = $1\n               ORDER BY r.display_name ASC",
   "describe": {
     "columns": [
       {
@@ -64,18 +64,28 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "worktree_base_dir",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_branch",
+        "ordinal": 15,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
@@ -90,9 +100,11 @@
       true,
       true,
       true,
+      true,
+      false,
       false,
       false
     ]
   },
-  "hash": "c24119a35ed2099b886a0b1a9a41adf01d1a1f86792abf3d3a410c6cbab2ec0f"
+  "hash": "bb9a2c8f2857426ec2fc7726dcf89fae597eaf96265ad759f3bde3417f696935"
 }

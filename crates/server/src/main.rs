@@ -67,6 +67,11 @@ async fn main() -> Result<(), WickebanError> {
         .backfill_repo_names()
         .await
         .map_err(DeploymentError::from)?;
+    deployment
+        .container()
+        .backfill_worktree_base_dirs()
+        .await
+        .map_err(DeploymentError::from)?;
     auto_planner::recover_stuck_plans(&deployment.db().pool, deployment.container_cloned()).await;
     auto_planner::recover_stuck_plan_completed(&deployment.db().pool).await;
     deployment
