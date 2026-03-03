@@ -85,6 +85,8 @@ pub async fn get_repo_branches(
         .get_by_id(&deployment.db().pool, repo_id)
         .await?;
 
+    deployment.repo().validate_git_repo_path(&repo.path)?;
+
     let branches = deployment.git().get_all_branches(&repo.path)?;
     Ok(ResponseJson(ApiResponse::success(branches)))
 }
@@ -97,6 +99,8 @@ pub async fn get_repo_remotes(
         .repo()
         .get_by_id(&deployment.db().pool, repo_id)
         .await?;
+
+    deployment.repo().validate_git_repo_path(&repo.path)?;
 
     let remotes = deployment.git().list_remotes(&repo.path)?;
     Ok(ResponseJson(ApiResponse::success(remotes)))
@@ -250,6 +254,8 @@ pub async fn list_open_prs(
         .repo()
         .get_by_id(&deployment.db().pool, repo_id)
         .await?;
+
+    deployment.repo().validate_git_repo_path(&repo.path)?;
 
     let remote = match query.remote {
         Some(name) => GitRemote {
