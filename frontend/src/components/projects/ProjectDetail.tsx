@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { projectsApi } from '@/lib/api';
 import { useProjects } from '@/hooks/useProjects';
+import { useProjectRepos } from '@/hooks/useProjectRepos';
 import {
   AlertCircle,
   ArrowLeft,
@@ -20,6 +21,8 @@ import {
   CheckSquare,
   Clock,
   Edit,
+  FolderOpen,
+  GitBranch,
   Loader2,
   Trash2,
 } from 'lucide-react';
@@ -33,6 +36,7 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
   const { t } = useTranslation('projects');
   const navigate = useNavigateWithSearch();
   const { projectsById, isLoading, error: projectsError } = useProjects();
+  const { data: repos } = useProjectRepos(projectId);
   const [deleteError, setDeleteError] = useState('');
 
   const project = projectsById[projectId] || null;
@@ -171,6 +175,38 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
                 </span>
               </div>
             </div>
+            {repos && repos.length > 0 && (
+              <div className="space-y-2 border-t pt-4">
+                {repos.map((repo) => (
+                  <div key={repo.id} className="space-y-2">
+                    <div className="flex items-start text-sm">
+                      <FolderOpen className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <span className="text-muted-foreground">
+                          Base Directory:
+                        </span>
+                        <code className="ml-2 block truncate text-xs bg-muted px-2 py-1 rounded font-mono mt-1">
+                          {repo.path}
+                        </code>
+                      </div>
+                    </div>
+                    {repo.worktree_base_dir && (
+                      <div className="flex items-start text-sm">
+                        <GitBranch className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <span className="text-muted-foreground">
+                            Worktree Directory:
+                          </span>
+                          <code className="ml-2 block truncate text-xs bg-muted px-2 py-1 rounded font-mono mt-1">
+                            {repo.worktree_base_dir}
+                          </code>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
