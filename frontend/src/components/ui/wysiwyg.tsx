@@ -22,6 +22,26 @@ import {
   PR_COMMENT_TRANSFORMER,
   PR_COMMENT_EXPORT_TRANSFORMER,
 } from './wysiwyg/nodes/pr-comment-node';
+import {
+  MermaidNode,
+  MERMAID_EXPORT_TRANSFORMER,
+  MERMAID_TRANSFORMER,
+} from './wysiwyg/nodes/mermaid-node';
+import {
+  DisplayTableNode,
+  DISPLAY_TABLE_EXPORT_TRANSFORMER,
+  DISPLAY_TABLE_TRANSFORMER,
+} from './wysiwyg/nodes/display-table-node';
+import {
+  CodeDiffNode,
+  CODE_DIFF_EXPORT_TRANSFORMER,
+  CODE_DIFF_TRANSFORMER,
+} from './wysiwyg/nodes/code-diff-node';
+import {
+  StatsNode,
+  STATS_EXPORT_TRANSFORMER,
+  STATS_TRANSFORMER,
+} from './wysiwyg/nodes/stats-node';
 import { TABLE_TRANSFORMER } from './wysiwyg/transformers/table-transformer';
 import {
   TaskAttemptContext,
@@ -310,6 +330,10 @@ const WYSIWYGEditor = forwardRef<WYSIWYGEditorRef, WysiwygProps>(
           LinkNode,
           ImageNode,
           PrCommentNode,
+          MermaidNode,
+          DisplayTableNode,
+          CodeDiffNode,
+          StatsNode,
           TableNode,
           TableRowNode,
           TableCellNode,
@@ -323,8 +347,16 @@ const WYSIWYGEditor = forwardRef<WYSIWYGEditorRef, WysiwygProps>(
       () => [
         TABLE_TRANSFORMER,
         IMAGE_TRANSFORMER,
-        PR_COMMENT_EXPORT_TRANSFORMER, // Export transformer for DecoratorNode (must be before import transformer)
-        PR_COMMENT_TRANSFORMER, // Import transformer for fenced code block
+        PR_COMMENT_EXPORT_TRANSFORMER,
+        PR_COMMENT_TRANSFORMER,
+        MERMAID_EXPORT_TRANSFORMER,
+        MERMAID_TRANSFORMER,
+        DISPLAY_TABLE_EXPORT_TRANSFORMER,
+        DISPLAY_TABLE_TRANSFORMER,
+        CODE_DIFF_EXPORT_TRANSFORMER,
+        CODE_DIFF_TRANSFORMER,
+        STATS_EXPORT_TRANSFORMER,
+        STATS_TRANSFORMER,
         CODE,
         ...TRANSFORMERS,
       ],

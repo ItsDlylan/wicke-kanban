@@ -29,6 +29,21 @@ interface QuestionOption {
   label: string;
   description?: string;
   markdown?: string;
+  mermaid?: string;
+  table?: { headers: string[]; rows: string[][] };
+  codeDiff?: {
+    before: string;
+    after: string;
+    language?: string;
+    fileName?: string;
+  };
+  stats?: {
+    items: {
+      label: string;
+      value: string;
+      trend?: 'up' | 'down' | 'neutral';
+    }[];
+  };
 }
 
 interface Question {
@@ -84,6 +99,29 @@ function useApprovalCountdown(
   return { timeLeft, percent };
 }
 
+// ---------- Display helpers ----------
+
+function optionToPreviewMarkdown(opt: QuestionOption): string | null {
+  if (opt.mermaid?.trim()) return '```mermaid\n' + opt.mermaid.trim() + '\n```';
+  if (opt.codeDiff)
+    return '```code-diff\n' + JSON.stringify(opt.codeDiff, null, 2) + '\n```';
+  if (opt.table)
+    return '```display-table\n' + JSON.stringify(opt.table, null, 2) + '\n```';
+  if (opt.stats)
+    return '```stats\n' + JSON.stringify(opt.stats, null, 2) + '\n```';
+  return opt.markdown?.trim() || null;
+}
+
+function optionHasPreview(opt: QuestionOption): boolean {
+  return !!(
+    opt.markdown?.trim() ||
+    opt.mermaid?.trim() ||
+    opt.table ||
+    opt.codeDiff ||
+    opt.stats
+  );
+}
+
 // ---------- Single Question UI ----------
 
 function QuestionCard({
@@ -104,13 +142,13 @@ function QuestionCard({
   const isMulti = question.multiSelect ?? false;
 
   const hasMarkdown = useMemo(
-    () => !isMulti && question.options.some((opt) => opt.markdown?.trim()),
+    () => !isMulti && question.options.some(optionHasPreview),
     [isMulti, question.options]
   );
 
   const [focusedLabel, setFocusedLabel] = useState<string | null>(() => {
     if (!isMulti) {
-      const first = question.options.find((opt) => opt.markdown?.trim());
+      const first = question.options.find(optionHasPreview);
       return first?.label ?? null;
     }
     return null;
@@ -119,7 +157,8 @@ function QuestionCard({
   const focusedMarkdown = useMemo(() => {
     if (!focusedLabel) return null;
     const opt = question.options.find((o) => o.label === focusedLabel);
-    return opt?.markdown?.trim() || null;
+    if (!opt) return null;
+    return optionToPreviewMarkdown(opt);
   }, [focusedLabel, question.options]);
 
   const handleOptionClick = (label: string) => {
