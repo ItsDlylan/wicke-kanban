@@ -195,11 +195,11 @@ impl ClaudeCode {
                 "PreToolUse".to_string(),
                 serde_json::json!([
                     {
-                        "matcher": "^ExitPlanMode$",
+                        "matcher": "^(ExitPlanMode|AskUserQuestion)$",
                         "hookCallbackIds": ["tool_approval"],
                     },
                     {
-                        "matcher": "^(?!ExitPlanMode$).*",
+                        "matcher": "^(?!(ExitPlanMode|AskUserQuestion)$).*",
                         "hookCallbackIds": [AUTO_APPROVE_CALLBACK_ID],
                     }
                 ]),

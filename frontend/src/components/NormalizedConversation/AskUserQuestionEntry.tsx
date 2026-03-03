@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/tooltip';
 import { approvalsApi } from '@/lib/api';
 import { Check, MessageCircleQuestion } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { useHotkeysContext } from 'react-hotkeys-hook';
 import { TabNavContext } from '@/contexts/TabNavigationContext';
 import { Scope } from '@/keyboard';
@@ -26,6 +28,7 @@ import { Scope } from '@/keyboard';
 interface QuestionOption {
   label: string;
   description?: string;
+  markdown?: string;
 }
 
 interface Question {
@@ -100,6 +103,25 @@ function QuestionCard({
   const [showOther, setShowOther] = useState(false);
   const isMulti = question.multiSelect ?? false;
 
+  const hasMarkdown = useMemo(
+    () => !isMulti && question.options.some((opt) => opt.markdown?.trim()),
+    [isMulti, question.options]
+  );
+
+  const [focusedLabel, setFocusedLabel] = useState<string | null>(() => {
+    if (!isMulti) {
+      const first = question.options.find((opt) => opt.markdown?.trim());
+      return first?.label ?? null;
+    }
+    return null;
+  });
+
+  const focusedMarkdown = useMemo(() => {
+    if (!focusedLabel) return null;
+    const opt = question.options.find((o) => o.label === focusedLabel);
+    return opt?.markdown?.trim() || null;
+  }, [focusedLabel, question.options]);
+
   const handleOptionClick = (label: string) => {
     if (disabled) return;
     if (label === '__other__') {
@@ -134,42 +156,107 @@ function QuestionCard({
         <span className="text-sm font-medium">{question.question}</span>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {question.options.map((opt) => {
-          const isSelected = selected.includes(opt.label);
-          return (
-            <Tooltip key={opt.label}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={isSelected ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-7 text-xs"
+      {hasMarkdown ? (
+        <div className="flex gap-3">
+          {/* Left column — vertical option list */}
+          <div className="w-48 shrink-0 flex flex-col gap-1">
+            {question.options.map((opt) => {
+              const isSelected = selected.includes(opt.label);
+              const isFocused = focusedLabel === opt.label;
+              return (
+                <button
+                  key={opt.label}
+                  className={cn(
+                    'w-full text-left rounded-md border px-3 py-2 text-sm transition-colors',
+                    isSelected
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : isFocused
+                        ? 'border-ring bg-accent'
+                        : 'border-border hover:bg-accent',
+                    disabled && 'opacity-50 cursor-not-allowed'
+                  )}
                   onClick={() => handleOptionClick(opt.label)}
+                  onMouseEnter={() => setFocusedLabel(opt.label)}
                   disabled={disabled}
                 >
-                  {isSelected && <Check className="mr-1 h-3 w-3" />}
-                  {opt.label}
-                </Button>
-              </TooltipTrigger>
-              {opt.description && (
-                <TooltipContent>
-                  <p className="max-w-xs">{opt.description}</p>
-                </TooltipContent>
+                  <span className="flex items-center gap-1.5">
+                    {isSelected && <Check className="h-3 w-3 shrink-0" />}
+                    <span className="font-medium">{opt.label}</span>
+                  </span>
+                  {opt.description && (
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      {opt.description}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {/* "Other" option */}
+            <button
+              className={cn(
+                'w-full text-left rounded-md border px-3 py-2 text-sm transition-colors',
+                showOther
+                  ? 'border-ring bg-accent'
+                  : 'border-border hover:bg-accent',
+                disabled && 'opacity-50 cursor-not-allowed'
               )}
-            </Tooltip>
-          );
-        })}
-        {/* "Other" option */}
-        <Button
-          variant={showOther ? 'default' : 'outline'}
-          size="sm"
-          className="h-7 text-xs"
-          onClick={() => handleOptionClick('__other__')}
-          disabled={disabled}
-        >
-          Other
-        </Button>
-      </div>
+              onClick={() => handleOptionClick('__other__')}
+              onMouseEnter={() => setFocusedLabel(null)}
+              disabled={disabled}
+            >
+              <span className="font-medium">Other</span>
+            </button>
+          </div>
+
+          {/* Right column — markdown preview */}
+          <div className="flex-1 rounded-md border border-border overflow-y-auto min-h-[200px] max-h-[400px]">
+            {focusedMarkdown ? (
+              <WYSIWYGEditor value={focusedMarkdown} disabled />
+            ) : (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground p-4">
+                Hover over an option to preview
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {question.options.map((opt) => {
+            const isSelected = selected.includes(opt.label);
+            return (
+              <Tooltip key={opt.label}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={isSelected ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => handleOptionClick(opt.label)}
+                    disabled={disabled}
+                  >
+                    {isSelected && <Check className="mr-1 h-3 w-3" />}
+                    {opt.label}
+                  </Button>
+                </TooltipTrigger>
+                {opt.description && (
+                  <TooltipContent>
+                    <p className="max-w-xs">{opt.description}</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            );
+          })}
+          {/* "Other" option */}
+          <Button
+            variant={showOther ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => handleOptionClick('__other__')}
+            disabled={disabled}
+          >
+            Other
+          </Button>
+        </div>
+      )}
 
       {showOther && (
         <div className="flex items-center gap-2">
