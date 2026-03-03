@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{decomposer, spec_generator};
+use super::{container::ContainerService, decomposer, spec_generator};
 
 #[derive(Debug, Error)]
 pub enum AutoPlannerError {
@@ -24,7 +24,10 @@ pub enum AutoPlannerError {
 /// Recover tasks whose plan_status is stuck at "generating" (e.g. from a server restart)
 /// by resetting them to "pending" and re-spawning plan generation.
 /// Also ensures these tasks have PlanGenerating status.
-pub async fn recover_stuck_plans(pool: &SqlitePool) {
+pub async fn recover_stuck_plans<C: ContainerService + Clone + Send + Sync + 'static>(
+    pool: &SqlitePool,
+    container: C,
+) {
     match Task::reset_stuck_generating_plans(pool).await {
         Ok(tasks) if !tasks.is_empty() => {
             tracing::info!(
@@ -37,6 +40,7 @@ pub async fn recover_stuck_plans(pool: &SqlitePool) {
                     let _ = Task::update_status(pool, task.id, TaskStatus::PlanGenerating).await;
                 }
                 spawn_auto_plan(
+                    container.clone(),
                     pool.clone(),
                     task.id,
                     task.project_id,
@@ -178,35 +182,15 @@ pub fn build_auto_plan_prompt(title: &str, description: Option<&str>) -> String 
     prompt
 }
 
-/// Shell out to `claude --print -p <prompt>` to generate a plan.
-/// This is a blocking call — use `spawn_blocking` from async context.
-pub fn run_plan_generation(prompt: &str, working_dir: &Path) -> Result<String, AutoPlannerError> {
-    let output = std::process::Command::new("claude")
-        .args(["--print", "--permission-mode=plan", "-p", prompt])
-        .current_dir(working_dir)
-        .output()
-        .map_err(|e| AutoPlannerError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AutoPlannerError::ExecutionFailed(format!(
-            "claude exited with status {}: {}",
-            output.status, stderr
-        )));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    Ok(stdout)
-}
-
-/// Spawn a background task that generates a plan for the given task.
+/// Spawn a background task that generates a plan for the given task
+/// using the interactive Claude executor (same pipeline as task execution).
 ///
-/// 1. Sets plan_status = "generating"
+/// 1. Sets plan_status = "generating" and task status to PlanGenerating
 /// 2. Gets working dir from project repos
-/// 3. Runs `claude --print` via spawn_blocking
-/// 4. On success: stores plan text, transitions to Plan status
-/// 5. On failure: sets plan_status = "failed", leaves task in Backlog
-pub fn spawn_auto_plan(
+/// 3. Starts a plan workspace with the interactive executor
+/// 4. The exit monitor handles plan extraction and post-plan steps
+pub fn spawn_auto_plan<C: ContainerService + Clone + Send + Sync + 'static>(
+    container: C,
     pool: SqlitePool,
     task_id: Uuid,
     project_id: Uuid,
@@ -232,8 +216,8 @@ pub fn spawn_auto_plan(
         }
 
         // Get working directory from project repos
-        let working_dir = match ProjectRepo::find_repos_for_project(&pool, project_id).await {
-            Ok(repos) if !repos.is_empty() => repos[0].path.clone(),
+        let repo_path = match ProjectRepo::find_repos_for_project(&pool, project_id).await {
+            Ok(repos) if !repos.is_empty() => repos[0].path.to_string_lossy().to_string(),
             Ok(_) => {
                 tracing::error!(
                     "No repos found for project {} while generating plan for task {}",
@@ -262,62 +246,34 @@ pub fn spawn_auto_plan(
             }
         };
 
-        let prompt = build_auto_plan_prompt(&title, description.as_deref());
-        let working_path = std::path::PathBuf::from(&working_dir);
-
-        // Run claude --print in a blocking thread
-        let result =
-            tokio::task::spawn_blocking(move || run_plan_generation(&prompt, &working_path)).await;
-
-        match result {
-            Ok(Ok(plan_text)) => {
-                // Success: store plan
-                if let Err(e) = Task::update_plan(&pool, task_id, &plan_text, "completed").await {
-                    tracing::error!("Failed to store plan for task {}: {}", task_id, e);
-                    return;
-                }
-
-                // Auto-generate spec sheet and decompose into child tasks
-                // so the task is prepared for Ralph execution.
-                // Failures here are non-fatal — the task still transitions to Ready.
-                auto_prepare_for_ralph(
-                    &pool,
-                    task_id,
-                    project_id,
-                    &title,
-                    description.as_deref(),
-                    &plan_text,
-                    &working_dir,
-                )
-                .await;
-
-                if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::Ready).await {
-                    tracing::error!(
-                        "Failed to transition task {} to Ready status: {}",
-                        task_id,
-                        e
-                    );
-                }
-                tracing::info!("Auto-plan generated successfully for task {}", task_id);
-            }
-            Ok(Err(e)) => {
-                // Claude execution failed
-                tracing::error!("Plan generation failed for task {}: {}", task_id, e);
-                let _ = Task::update_plan(
-                    &pool,
-                    task_id,
-                    &format!("Plan generation failed: {e}"),
-                    "failed",
-                )
-                .await;
+        // Get the task record for start_plan_workspace
+        let task = match Task::find_by_id(&pool, task_id).await {
+            Ok(Some(t)) => t,
+            Ok(None) => {
+                tracing::error!("Task {} not found for auto-plan", task_id);
+                return;
             }
             Err(e) => {
-                // spawn_blocking panicked
-                tracing::error!("Plan generation task panicked for task {}: {}", task_id, e);
-                let _ =
-                    Task::update_plan(&pool, task_id, "Plan generation task panicked", "failed")
-                        .await;
+                tracing::error!("Failed to find task {}: {}", task_id, e);
+                return;
             }
+        };
+
+        let prompt = build_auto_plan_prompt(&title, description.as_deref());
+
+        // Start the interactive plan workspace — the exit monitor handles the rest
+        if let Err(e) = container
+            .start_plan_workspace(&task, &repo_path, prompt)
+            .await
+        {
+            tracing::error!("Failed to start plan workspace for task {}: {}", task_id, e);
+            let _ = Task::update_plan(
+                &pool,
+                task_id,
+                &format!("Failed to start plan generation: {e}"),
+                "failed",
+            )
+            .await;
         }
     });
 }
@@ -325,7 +281,7 @@ pub fn spawn_auto_plan(
 /// After plan generation succeeds, automatically generate a spec sheet and decompose the task
 /// into child tasks so it's prepared for Ralph execution. Failures are logged but non-fatal.
 /// This function is idempotent — it skips steps that have already completed (e.g. on recovery).
-async fn auto_prepare_for_ralph(
+pub async fn auto_prepare_for_ralph(
     pool: &SqlitePool,
     task_id: Uuid,
     project_id: Uuid,

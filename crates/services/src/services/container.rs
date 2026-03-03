@@ -19,11 +19,12 @@ use db::{
             CreateExecutionProcessRepoState, ExecutionProcessRepoState,
         },
         merge::Merge,
+        project_repo::ProjectRepo,
         repo::Repo,
         session::{CreateSession, Session, SessionError},
         task::{Task, TaskStatus},
-        workspace::{Workspace, WorkspaceError},
-        workspace_repo::WorkspaceRepo,
+        workspace::{CreateWorkspace, Workspace, WorkspaceError},
+        workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
     },
 };
 #[cfg(feature = "qa-mode")]
@@ -196,10 +197,10 @@ pub trait ContainerService {
     /// - Never when a setup script has no next_action (parallel mode)
     /// - The next action is None (no follow-up actions)
     fn should_finalize(&self, ctx: &ExecutionContext) -> bool {
-        // Never finalize DevServer processes
+        // Never finalize DevServer or AutoPlan processes
         if matches!(
             ctx.execution_process.run_reason,
-            ExecutionProcessRunReason::DevServer
+            ExecutionProcessRunReason::DevServer | ExecutionProcessRunReason::AutoPlan
         ) {
             return false;
         }
@@ -1498,6 +1499,109 @@ pub trait ContainerService {
         Ok(execution_process)
     }
 
+    /// Start a lightweight plan workspace that reuses the repo directory directly
+    /// (no git worktree), then launches an interactive Claude session in plan mode.
+    async fn start_plan_workspace(
+        &self,
+        task: &Task,
+        repo_path: &str,
+        prompt: String,
+    ) -> Result<ExecutionProcess, ContainerError> {
+        let pool = &self.db().pool;
+        let workspace_id = Uuid::new_v4();
+
+        // The workspace model assumes container_ref is a parent directory containing
+        // repo subdirectories (container_ref/repo.name = repo path). Compute the parent
+        // of the repo path so that path joins work correctly throughout the system.
+        let repo_pathbuf = std::path::PathBuf::from(repo_path);
+        let container_dir = repo_pathbuf
+            .parent()
+            .ok_or_else(|| {
+                ContainerError::Other(anyhow!(
+                    "Cannot determine parent directory of repo path: {}",
+                    repo_path
+                ))
+            })?
+            .to_string_lossy()
+            .to_string();
+
+        // Associate project repos
+        let repos = ProjectRepo::find_repos_for_project(pool, task.project_id).await?;
+        if repos.is_empty() {
+            return Err(ContainerError::Other(anyhow!(
+                "No repos found for project {}",
+                task.project_id
+            )));
+        }
+
+        // Use repo name as agent_working_dir so the executor runs inside the repo
+        let agent_working_dir = repos[0].name.clone();
+
+        // Create workspace record — no git worktree, point container_ref at repo parent
+        let workspace = Workspace::create(
+            pool,
+            &CreateWorkspace {
+                branch: format!("auto-plan-{}", short_uuid(&workspace_id)),
+                agent_working_dir: Some(agent_working_dir.clone()),
+            },
+            workspace_id,
+            task.id,
+        )
+        .await?;
+
+        // Set container_ref to repo parent dir (skip self.create() / worktree)
+        Workspace::update_container_ref(pool, workspace.id, &container_dir).await?;
+
+        let workspace_repos: Vec<CreateWorkspaceRepo> = repos
+            .iter()
+            .map(|r| CreateWorkspaceRepo {
+                repo_id: r.id,
+                target_branch: r
+                    .default_target_branch
+                    .clone()
+                    .unwrap_or_else(|| "main".to_string()),
+            })
+            .collect();
+        WorkspaceRepo::create_many(pool, workspace.id, &workspace_repos).await?;
+
+        // Create session
+        let session = Session::create(
+            pool,
+            &CreateSession {
+                executor: Some("CLAUDE_CODE".to_string()),
+            },
+            Uuid::new_v4(),
+            workspace.id,
+        )
+        .await?;
+
+        // Build the plan-mode coding agent action with working_dir set to the repo name
+        let action = ExecutorAction::new(
+            ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
+                prompt,
+                executor_profile_id: ExecutorProfileId {
+                    executor: executors::executors::BaseCodingAgent::ClaudeCode,
+                    variant: Some("PLAN".to_string()),
+                },
+                working_dir: Some(agent_working_dir),
+            }),
+            None,
+        );
+
+        // Re-fetch workspace to get updated container_ref
+        let workspace = Workspace::find_by_id(pool, workspace.id)
+            .await?
+            .ok_or(SqlxError::RowNotFound)?;
+
+        self.start_execution(
+            &workspace,
+            &session,
+            &action,
+            &ExecutionProcessRunReason::AutoPlan,
+        )
+        .await
+    }
+
     async fn start_execution(
         &self,
         workspace: &Workspace,
@@ -1510,7 +1614,9 @@ pub trait ContainerService {
             .parent_task(&self.db().pool)
             .await?
             .ok_or(SqlxError::RowNotFound)?;
-        if run_reason != &ExecutionProcessRunReason::DevServer {
+        if run_reason != &ExecutionProcessRunReason::DevServer
+            && run_reason != &ExecutionProcessRunReason::AutoPlan
+        {
             // If task is part of a ralph session, set to Ralph; otherwise InProgress
             let target_status = if task.status == TaskStatus::Ralph {
                 TaskStatus::Ralph

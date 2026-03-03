@@ -58,6 +58,7 @@ pub enum ExecutionProcessRunReason {
     ArchiveScript,
     CodingAgent,
     DevServer,
+    AutoPlan,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]

@@ -136,6 +136,7 @@ pub async fn create_task(
     // Spawn background auto-plan generation for top-level tasks (not epics)
     if is_top_level && !is_epic {
         auto_planner::spawn_auto_plan(
+            deployment.container_cloned(),
             deployment.db().pool.clone(),
             task.id,
             task.project_id,
@@ -452,6 +453,7 @@ pub async fn regenerate_plan(
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
     auto_planner::spawn_auto_plan(
+        deployment.container_cloned(),
         deployment.db().pool.clone(),
         task.id,
         task.project_id,

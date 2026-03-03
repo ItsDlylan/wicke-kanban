@@ -45,6 +45,7 @@ use serde_json::json;
 use services::services::{
     analytics::AnalyticsContext,
     approvals::{Approvals, executor_approvals::ExecutorApprovalBridge},
+    auto_planner,
     config::{Config, DEFAULT_COMMIT_REMINDER_PROMPT},
     container::{ContainerError, ContainerRef, ContainerService},
     diff_stream::{self, DiffStreamHandle},
@@ -405,6 +406,132 @@ impl LocalContainerService {
         any_committed
     }
 
+    /// Handle completion of an AutoPlan execution process.
+    /// Extracts the plan from the MsgStore, stores it on the task, and spawns post-plan steps.
+    async fn handle_auto_plan_completion(&self, ctx: &ExecutionContext) {
+        let pool = &self.db.pool;
+        let task_id = ctx.task.id;
+
+        let success = matches!(
+            ctx.execution_process.status,
+            ExecutionProcessStatus::Completed
+        ) && ctx.execution_process.exit_code == Some(0);
+
+        if !success {
+            tracing::warn!(
+                "AutoPlan execution failed for task {} (status={:?}, exit_code={:?})",
+                task_id,
+                ctx.execution_process.status,
+                ctx.execution_process.exit_code
+            );
+            let _ = Task::update_plan(pool, task_id, "Plan generation failed", "failed").await;
+            return;
+        }
+
+        // Extract plan from MsgStore by scanning stdout for ExitPlanMode tool use
+        let plan_text = self
+            .extract_plan_from_msg_store(&ctx.execution_process.id)
+            .await;
+
+        match plan_text {
+            Some(plan) => {
+                if let Err(e) = Task::update_plan(pool, task_id, &plan, "completed").await {
+                    tracing::error!("Failed to store plan for task {}: {}", task_id, e);
+                    return;
+                }
+                tracing::info!("AutoPlan: stored plan for task {}", task_id);
+
+                // Get working directory from repos
+                let working_dir = if let Some(repo) = ctx.repos.first() {
+                    repo.path.to_string_lossy().to_string()
+                } else {
+                    tracing::warn!("AutoPlan: no repos found for task {}", task_id);
+                    let _ = Task::update_status(pool, task_id, TaskStatus::Ready).await;
+                    return;
+                };
+
+                // Spawn post-plan steps (spec generation + decomposition)
+                let pool_clone = pool.clone();
+                let project_id = ctx.task.project_id;
+                let title = ctx.task.title.clone();
+                let description = ctx.task.description.clone();
+                tokio::spawn(async move {
+                    auto_planner::auto_prepare_for_ralph(
+                        &pool_clone,
+                        task_id,
+                        project_id,
+                        &title,
+                        description.as_deref(),
+                        &plan,
+                        Path::new(&working_dir),
+                    )
+                    .await;
+
+                    if let Err(e) =
+                        Task::update_status(&pool_clone, task_id, TaskStatus::Ready).await
+                    {
+                        tracing::error!(
+                            "Failed to transition task {} to Ready status: {}",
+                            task_id,
+                            e
+                        );
+                    }
+                    tracing::info!("AutoPlan: post-plan steps completed for task {}", task_id);
+                });
+            }
+            None => {
+                tracing::warn!("AutoPlan: no plan found in MsgStore for task {}", task_id);
+                let _ = Task::update_plan(
+                    pool,
+                    task_id,
+                    "Plan generation completed but no plan was extracted",
+                    "failed",
+                )
+                .await;
+            }
+        }
+    }
+
+    /// Scan the MsgStore for an ExitPlanMode tool use and extract the plan text.
+    async fn extract_plan_from_msg_store(&self, exec_id: &Uuid) -> Option<String> {
+        let store = self.get_msg_store_by_id(exec_id).await?;
+        let history = store.get_history();
+
+        // Scan in reverse for the ExitPlanMode tool call
+        for msg in history.iter().rev() {
+            if let LogMsg::Stdout(text) = msg {
+                // Each stdout line is a JSON object from Claude. Look for tool_use with ExitPlanMode
+                for line in text.lines() {
+                    if !line.contains("ExitPlanMode") {
+                        continue;
+                    }
+                    // Try to parse as JSON and extract the plan
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                        // Claude stdout format: look in content array for tool_use items
+                        if let Some(content) = val.get("content").and_then(|c| c.as_array()) {
+                            for item in content {
+                                if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                                    && item.get("name").and_then(|n| n.as_str())
+                                        == Some("ExitPlanMode")
+                                {
+                                    if let Some(plan) = item
+                                        .get("input")
+                                        .and_then(|i| i.get("plan"))
+                                        .and_then(|p| p.as_str())
+                                    {
+                                        return Some(plan.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Spawn a background task that polls the child process for completion and
     /// cleans up the execution entry when it exits.
     pub fn spawn_exit_monitor(
@@ -480,6 +607,25 @@ impl LocalContainerService {
                 // Update executor session summary if available
                 if let Err(e) = container.update_executor_session_summary(&exec_id).await {
                     tracing::warn!("Failed to update executor session summary: {}", e);
+                }
+
+                // AutoPlan: extract plan and run post-plan steps, skip normal commit/finalize flow
+                if matches!(
+                    ctx.execution_process.run_reason,
+                    ExecutionProcessRunReason::AutoPlan
+                ) {
+                    container.handle_auto_plan_completion(&ctx).await;
+                    // Fall through to MsgStore cleanup below
+                    container.update_after_head_commits(exec_id).await;
+                    let db_stream_handle = container.take_db_stream_handle(&exec_id).await;
+                    if let Some(msg_arc) = msg_stores.write().await.remove(&exec_id) {
+                        msg_arc.push_finished();
+                    }
+                    if let Some(handle) = db_stream_handle {
+                        let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
+                    }
+                    child_store.write().await.remove(&exec_id);
+                    return;
                 }
 
                 let success = matches!(
@@ -1012,7 +1158,10 @@ impl ContainerService for LocalContainerService {
             let workspace_dir = PathBuf::from(container_ref);
             let repositories =
                 WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id).await?;
-            if !repositories.is_empty() {
+            // Skip worktree creation if the workspace points directly at the original repo
+            let is_direct_repo = repositories.len() == 1
+                && workspace_dir.join(&repositories[0].name) == repositories[0].path;
+            if !repositories.is_empty() && !is_direct_repo {
                 WorkspaceManager::ensure_workspace_exists(
                     &workspace_dir,
                     &repositories,
@@ -1135,8 +1284,18 @@ impl ContainerService for LocalContainerService {
                 .join(&workspace_dir_name)
         };
 
-        WorkspaceManager::ensure_workspace_exists(&workspace_dir, &repositories, &workspace.branch)
+        // Skip worktree creation if the workspace points directly at the original repo
+        // (e.g., auto-plan workspaces that reuse the repo without a git worktree).
+        let is_direct_repo = repositories.len() == 1
+            && workspace_dir.join(&repositories[0].name) == repositories[0].path;
+        if !is_direct_repo {
+            WorkspaceManager::ensure_workspace_exists(
+                &workspace_dir,
+                &repositories,
+                &workspace.branch,
+            )
             .await?;
+        }
 
         if workspace.container_ref.is_none() {
             Workspace::update_container_ref(
@@ -1147,11 +1306,13 @@ impl ContainerService for LocalContainerService {
             .await?;
         }
 
-        // Copy project files and images (fast no-op if already exist)
-        self.copy_files_and_images(&workspace_dir, workspace)
-            .await?;
+        if !is_direct_repo {
+            // Copy project files and images (fast no-op if already exist)
+            self.copy_files_and_images(&workspace_dir, workspace)
+                .await?;
 
-        Self::create_workspace_config_files(&workspace_dir, &repositories).await?;
+            Self::create_workspace_config_files(&workspace_dir, &repositories).await?;
+        }
 
         Ok(workspace_dir.to_string_lossy().to_string())
     }
@@ -1327,7 +1488,7 @@ impl ContainerService for LocalContainerService {
         if let Ok(ctx) = ExecutionProcess::load_context(&self.db.pool, execution_process.id).await
             && !matches!(
                 ctx.execution_process.run_reason,
-                ExecutionProcessRunReason::DevServer
+                ExecutionProcessRunReason::DevServer | ExecutionProcessRunReason::AutoPlan
             )
             && let Err(e) = Task::update_status(&self.db.pool, ctx.task.id, TaskStatus::QA).await
         {

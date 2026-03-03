@@ -241,4 +241,9 @@ impl LocalDeployment {
     pub fn pty(&self) -> &PtyService {
         &self.pty
     }
+
+    /// Returns a cloned container service for use in contexts requiring an owned value.
+    pub fn container_cloned(&self) -> LocalContainerService {
+        self.container.clone()
+    }
 }
