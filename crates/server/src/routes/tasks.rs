@@ -15,7 +15,7 @@ use axum::{
 use db::models::{
     image::TaskImage,
     repo::{Repo, RepoError},
-    task::{CreateTask, Task, TaskType, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskStatus, TaskType, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
@@ -118,12 +118,14 @@ pub async fn create_task(
         payload.project_id
     );
 
-    // Epics skip auto-plan generation
+    // Epics and ideas skip auto-plan generation
     let is_epic = payload.task_type == Some(TaskType::Epic);
+    let is_idea = payload.status == Some(TaskStatus::Idea);
 
-    // Top-level tasks (no parent) get auto-plan generation, but not epics
+    // Top-level tasks (no parent) get auto-plan generation, but not epics or ideas
     let is_top_level = payload.parent_task_id.is_none() && payload.parent_workspace_id.is_none();
-    if is_top_level && !is_epic {
+    let should_auto_plan = is_top_level && !is_epic && !is_idea;
+    if should_auto_plan {
         payload.plan_status = Some("pending".to_string());
     }
 
@@ -133,8 +135,8 @@ pub async fn create_task(
         TaskImage::associate_many_dedup(&deployment.db().pool, task.id, image_ids).await?;
     }
 
-    // Spawn background auto-plan generation for top-level tasks (not epics)
-    if is_top_level && !is_epic {
+    // Spawn background auto-plan generation for eligible tasks
+    if should_auto_plan {
         auto_planner::spawn_auto_plan(
             deployment.container_cloned(),
             deployment.db().pool.clone(),
