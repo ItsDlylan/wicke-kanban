@@ -587,48 +587,53 @@ impl LocalContainerService {
         let store = self.get_msg_store_by_id(exec_id).await?;
         let history = store.get_history();
 
-        // Scan in reverse for the ExitPlanMode tool call
-        for msg in history.iter().rev() {
+        // MsgStore entries are raw byte chunks from ReaderStream, so a single
+        // JSON line may be split across multiple LogMsg::Stdout entries.
+        // Concatenate all stdout first, then split by newlines.
+        let mut all_stdout = String::new();
+        for msg in history.iter() {
             if let LogMsg::Stdout(text) = msg {
-                for line in text.lines() {
-                    if !line.contains("ExitPlanMode") {
-                        continue;
+                all_stdout.push_str(text);
+            }
+        }
+
+        // Scan lines in reverse (most recent first) for the ExitPlanMode tool call
+        for line in all_stdout.lines().rev() {
+            if !line.contains("ExitPlanMode") {
+                continue;
+            }
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                // Claude Code emits ExitPlanMode as a top-level tool_use event:
+                // {"type":"tool_use","name":"ExitPlanMode","input":{"plan":"..."}}
+                if val.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                    && val.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+                {
+                    if let Some(plan) = val
+                        .get("input")
+                        .and_then(|i| i.get("plan"))
+                        .and_then(|p| p.as_str())
+                    {
+                        return Some(plan.to_string());
                     }
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-                        // Claude Code emits ExitPlanMode as a top-level tool_use event:
-                        // {"type":"tool_use","name":"ExitPlanMode","input":{"plan":"..."}}
-                        if val.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                            && val.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+                }
+
+                // Also check assistant message format (content array under message)
+                // for backwards compatibility
+                if let Some(content) = val
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                {
+                    for item in content {
+                        if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                            && item.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
                         {
-                            if let Some(plan) = val
+                            if let Some(plan) = item
                                 .get("input")
                                 .and_then(|i| i.get("plan"))
                                 .and_then(|p| p.as_str())
                             {
                                 return Some(plan.to_string());
-                            }
-                        }
-
-                        // Also check assistant message format (content array under message)
-                        // for backwards compatibility
-                        if let Some(content) = val
-                            .get("message")
-                            .and_then(|m| m.get("content"))
-                            .and_then(|c| c.as_array())
-                        {
-                            for item in content {
-                                if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                                    && item.get("name").and_then(|n| n.as_str())
-                                        == Some("ExitPlanMode")
-                                {
-                                    if let Some(plan) = item
-                                        .get("input")
-                                        .and_then(|i| i.get("plan"))
-                                        .and_then(|p| p.as_str())
-                                    {
-                                        return Some(plan.to_string());
-                                    }
-                                }
                             }
                         }
                     }
@@ -644,29 +649,33 @@ impl LocalContainerService {
         let store = self.get_msg_store_by_id(exec_id).await?;
         let history = store.get_history();
 
+        // Concatenate all stdout chunks to handle lines split across entries
+        let mut all_stdout = String::new();
+        for msg in history.iter() {
+            if let LogMsg::Stdout(text) = msg {
+                all_stdout.push_str(text);
+            }
+        }
+
         let mut collected_errors: Vec<String> = Vec::new();
 
         // Scan in reverse for result messages containing errors
-        for msg in history.iter().rev() {
-            if let LogMsg::Stdout(text) = msg {
-                for line in text.lines() {
-                    if !line.contains("\"result\"") && !line.contains("\"type\":\"result\"") {
-                        continue;
-                    }
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-                        // Check for "errors" array
-                        if let Some(errors) = val.get("errors").and_then(|e| e.as_array()) {
-                            for err in errors {
-                                if let Some(s) = err.as_str() {
-                                    collected_errors.push(s.to_string());
-                                }
-                            }
-                        }
-                        // Check for singular "error" string
-                        if let Some(error) = val.get("error").and_then(|e| e.as_str()) {
-                            collected_errors.push(error.to_string());
+        for line in all_stdout.lines().rev() {
+            if !line.contains("\"result\"") && !line.contains("\"type\":\"result\"") {
+                continue;
+            }
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                // Check for "errors" array
+                if let Some(errors) = val.get("errors").and_then(|e| e.as_array()) {
+                    for err in errors {
+                        if let Some(s) = err.as_str() {
+                            collected_errors.push(s.to_string());
                         }
                     }
+                }
+                // Check for singular "error" string
+                if let Some(error) = val.get("error").and_then(|e| e.as_str()) {
+                    collected_errors.push(error.to_string());
                 }
             }
             // Stop early once we have errors
