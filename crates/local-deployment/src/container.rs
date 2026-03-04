@@ -531,52 +531,55 @@ impl LocalContainerService {
                 }
                 tracing::info!("AutoPlan: stored plan for task {}", task_id);
 
-                // Get working directory from repos
-                let working_dir = if let Some(repo) = ctx.repos.first() {
-                    repo.path.to_string_lossy().to_string()
+                // Get working directory from workspace worktree (not the project repo)
+                let working_dir = if let Some(ref container_ref) = ctx.workspace.container_ref {
+                    if let Some(repo) = ctx.repos.first() {
+                        PathBuf::from(container_ref).join(&repo.name)
+                    } else {
+                        tracing::warn!("AutoPlan: no repos found for task {}", task_id);
+                        let _ = Task::update_status(pool, task_id, TaskStatus::Ready).await;
+                        return;
+                    }
                 } else {
-                    tracing::warn!("AutoPlan: no repos found for task {}", task_id);
+                    tracing::warn!("AutoPlan: no workspace container_ref for task {}", task_id);
                     let _ = Task::update_status(pool, task_id, TaskStatus::Ready).await;
                     return;
                 };
 
-                // Spawn post-plan steps (spec generation + decomposition)
-                let pool_clone = pool.clone();
+                // Run post-plan steps inline (not spawned) so workspace isn't cleaned up prematurely
                 let project_id = ctx.task.project_id;
                 let title = ctx.task.title.clone();
                 let description = ctx.task.description.clone();
-                tokio::spawn(async move {
-                    let success = auto_planner::auto_prepare_for_ralph(
-                        &pool_clone,
+                let success = auto_planner::auto_prepare_for_ralph(
+                    pool,
+                    task_id,
+                    project_id,
+                    &title,
+                    description.as_deref(),
+                    &plan,
+                    &working_dir,
+                )
+                .await;
+
+                let (target_status, status_name) = if success {
+                    (TaskStatus::Ready, "Ready")
+                } else {
+                    tracing::warn!(
+                        "AutoPlan: spec generation failed for task {}, moving to SpecReview",
+                        task_id
+                    );
+                    (TaskStatus::SpecReview, "SpecReview")
+                };
+
+                if let Err(e) = Task::update_status(pool, task_id, target_status).await {
+                    tracing::error!(
+                        "Failed to transition task {} to {} status: {}",
                         task_id,
-                        project_id,
-                        &title,
-                        description.as_deref(),
-                        &plan,
-                        Path::new(&working_dir),
-                    )
-                    .await;
-
-                    let (target_status, status_name) = if success {
-                        (TaskStatus::Ready, "Ready")
-                    } else {
-                        tracing::warn!(
-                            "AutoPlan: spec generation failed for task {}, moving to SpecReview",
-                            task_id
-                        );
-                        (TaskStatus::SpecReview, "SpecReview")
-                    };
-
-                    if let Err(e) = Task::update_status(&pool_clone, task_id, target_status).await {
-                        tracing::error!(
-                            "Failed to transition task {} to {} status: {}",
-                            task_id,
-                            status_name,
-                            e
-                        );
-                    }
-                    tracing::info!("AutoPlan: post-plan steps completed for task {}", task_id);
-                });
+                        status_name,
+                        e
+                    );
+                }
+                tracing::info!("AutoPlan: post-plan steps completed for task {}", task_id);
             }
             None => {
                 tracing::warn!("AutoPlan: no plan found in MsgStore for task {}", task_id);
@@ -1920,11 +1923,34 @@ fn success_exit_status() -> std::process::ExitStatus {
 /// Extracted as a pure function for testability.
 fn is_path_under_known_bases(workspace_dir: &Path, known_bases: &[PathBuf]) -> bool {
     for base in known_bases {
-        if workspace_dir.starts_with(base) {
+        if path_starts_with_case_insensitive(workspace_dir, base) {
             return true;
         }
     }
     false
+}
+
+/// Case-insensitive path prefix check for macOS/Windows (case-insensitive filesystems).
+/// On Linux, falls back to the standard case-sensitive check.
+fn path_starts_with_case_insensitive(path: &Path, base: &Path) -> bool {
+    if cfg!(target_os = "linux") {
+        return path.starts_with(base);
+    }
+    // macOS (APFS) and Windows (NTFS) are case-insensitive by default
+    let path_lower = path.to_string_lossy().to_lowercase();
+    let base_lower = base.to_string_lossy().to_lowercase();
+    // Ensure we match on path component boundaries, not partial directory names.
+    // e.g. "/tmp/foo-worktrees-evil" should NOT match base "/tmp/foo-worktrees"
+    if path_lower == base_lower {
+        return true;
+    }
+    // Check prefix + path separator to avoid partial name matches
+    let base_with_sep = if base_lower.ends_with(std::path::MAIN_SEPARATOR) {
+        base_lower
+    } else {
+        format!("{}{}", base_lower, std::path::MAIN_SEPARATOR)
+    };
+    path_lower.starts_with(&base_with_sep)
 }
 
 /// Get the user's home directory from environment.
@@ -2110,6 +2136,47 @@ mod tests {
         assert!(
             !is_path_under_known_bases(&evil_dir, &known_bases),
             "Partial directory name match must not be considered safe"
+        );
+    }
+
+    #[test]
+    fn test_case_insensitive_path_matching() {
+        // Simulates macOS case mismatch: stored "pokemontcg-worktrees" vs actual "PokemonTCG-worktrees"
+        let tmp = TempDir::new().unwrap();
+        let actual_base = tmp.path().join("PokemonTCG-worktrees");
+        let workspace = actual_base.join("plan-abc123");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        // Known base has different casing than actual path
+        let known_bases = vec![tmp.path().join("pokemontcg-worktrees")];
+
+        if cfg!(target_os = "linux") {
+            // On Linux (case-sensitive), these should NOT match
+            assert!(
+                !is_path_under_known_bases(&workspace, &known_bases),
+                "Linux should be case-sensitive"
+            );
+        } else {
+            // On macOS/Windows (case-insensitive), these should match
+            assert!(
+                is_path_under_known_bases(&workspace, &known_bases),
+                "macOS/Windows should match case-insensitively"
+            );
+        }
+    }
+
+    #[test]
+    fn test_case_insensitive_partial_name_no_match() {
+        // Ensure case-insensitive matching doesn't break partial name rejection
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path().join("MyProject-worktrees");
+        let evil_dir = tmp.path().join("MyProject-worktrees-evil");
+        std::fs::create_dir_all(&evil_dir).unwrap();
+
+        let known_bases = vec![base];
+        assert!(
+            !is_path_under_known_bases(&evil_dir, &known_bases),
+            "Partial directory name match must not be considered safe even with case-insensitive matching"
         );
     }
 

@@ -67,8 +67,30 @@ pub fn build_spec_generation_prompt(
 /// Shell out to `claude --print -p <prompt>` to generate a spec.
 /// This is a blocking call — use `spawn_blocking` from async context.
 pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, SpecGeneratorError> {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "overview": { "type": "string" },
+            "requirements": { "type": "array", "items": { "type": "string" } },
+            "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+            "constraints": { "type": "array", "items": { "type": "string" } },
+            "tech_notes": { "type": "string" }
+        },
+        "required": ["overview", "requirements", "acceptance_criteria", "constraints", "tech_notes"]
+    });
+    let schema_str = schema.to_string();
+
     let output = std::process::Command::new("claude")
-        .args(["--print", "--permission-mode=plan", "-p", prompt])
+        .args([
+            "--print",
+            "--permission-mode=plan",
+            "--output-format",
+            "json",
+            "--json-schema",
+            &schema_str,
+            "-p",
+            prompt,
+        ])
         .current_dir(working_dir)
         .env_remove("CLAUDECODE")
         .output()
@@ -104,8 +126,27 @@ fn find_json_object_start(s: &str) -> Option<&str> {
 }
 
 /// Parse the raw output from Claude into a GeneratedSpec.
+/// Handles both the `--output-format json` envelope and raw JSON/markdown output.
 pub fn parse_spec_output(output: &str) -> Result<GeneratedSpec, SpecGeneratorError> {
     let trimmed = output.trim();
+
+    // If the output is a JSON envelope from --output-format json, extract the result field.
+    // The envelope looks like: {"type":"result","result":"{ \"overview\": ... }","..."}
+    let extracted;
+    let trimmed = if trimmed.starts_with('{') {
+        if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(result_str) = envelope.get("result").and_then(|v| v.as_str()) {
+                extracted = result_str.trim().to_string();
+                &extracted
+            } else {
+                trimmed
+            }
+        } else {
+            trimmed
+        }
+    } else {
+        trimmed
+    };
 
     // Strip markdown fences if present
     let json_str = if trimmed.starts_with("```") {
@@ -193,6 +234,25 @@ mod tests {
         let output = "Route `{event}/trade-stats` needs naming.\n{\"overview\": \"Test\", \"requirements\": [], \"acceptance_criteria\": [], \"constraints\": [], \"tech_notes\": \"\"}";
         let result = parse_spec_output(output).unwrap();
         assert_eq!(result.overview, "Test");
+    }
+
+    #[test]
+    fn test_parse_spec_output_json_envelope() {
+        let inner = r#"{ "overview": "Build auth", "requirements": ["Login"], "acceptance_criteria": ["Can log in"], "constraints": [], "tech_notes": "Use JWT" }"#;
+        let envelope = serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "cost_usd": 0.01,
+            "duration_ms": 5000,
+            "is_error": false,
+            "num_turns": 1,
+            "result": inner,
+            "session_id": "test-session"
+        });
+        let output = serde_json::to_string(&envelope).unwrap();
+        let result = parse_spec_output(&output).unwrap();
+        assert_eq!(result.overview, "Build auth");
+        assert_eq!(result.tech_notes, "Use JWT");
     }
 
     #[test]
