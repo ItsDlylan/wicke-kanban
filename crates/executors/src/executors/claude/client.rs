@@ -31,6 +31,7 @@ pub struct ClaudeAgentClient {
     log_writer: LogWriter,
     approvals: Option<Arc<dyn ExecutorApprovalService>>,
     auto_approve: bool, // true when approvals is None
+    stop_after_plan: bool,
     repo_context: RepoContext,
     commit_reminder_prompt: String,
     cancel: CancellationToken,
@@ -41,6 +42,7 @@ impl ClaudeAgentClient {
     pub fn new(
         log_writer: LogWriter,
         approvals: Option<Arc<dyn ExecutorApprovalService>>,
+        stop_after_plan: bool,
         repo_context: RepoContext,
         commit_reminder_prompt: String,
         cancel: CancellationToken,
@@ -50,6 +52,7 @@ impl ClaudeAgentClient {
             log_writer,
             approvals,
             auto_approve,
+            stop_after_plan,
             repo_context,
             commit_reminder_prompt,
             cancel,
@@ -221,6 +224,21 @@ impl ClaudeAgentClient {
     }
 
     pub async fn log_message(&self, line: &str) -> Result<(), ExecutorError> {
-        self.log_writer.log_raw(line).await
+        self.log_writer.log_raw(line).await?;
+
+        // For auto-plan: once ExitPlanMode appears as an actual tool_use in stdout,
+        // the plan text is captured.  Cancel the execution so Claude doesn't
+        // continue implementing.  We check for "tool_use" to avoid matching the
+        // init message which lists "ExitPlanMode" in the available tools array.
+        if self.stop_after_plan && line.contains("tool_use") && line.contains("ExitPlanMode") {
+            let cancel = self.cancel.clone();
+            tokio::spawn(async move {
+                // Brief delay so the tool result is fully flushed to the log
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                cancel.cancel();
+            });
+        }
+
+        Ok(())
     }
 }
