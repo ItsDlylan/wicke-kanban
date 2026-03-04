@@ -147,6 +147,13 @@ impl ClaudeAgentClient {
                 updated_input: input,
                 updated_permissions: None,
             })
+        } else if self.stop_after_plan && tool_name == EXIT_PLAN_MODE_NAME {
+            // Auto-approve ExitPlanMode during auto-plan so the cancel timer
+            // (fired from log_message) doesn't race against the approval service.
+            Ok(PermissionResult::Allow {
+                updated_input: input,
+                updated_permissions: None,
+            })
         } else if let Some(latest_tool_use_id) = tool_use_id {
             self.handle_approval(latest_tool_use_id, tool_name, input)
                 .await
