@@ -486,30 +486,42 @@ impl LocalContainerService {
 
     /// Handle completion of an AutoPlan execution process.
     /// Extracts the plan from the MsgStore, stores it on the task, and spawns post-plan steps.
-    async fn handle_auto_plan_completion(&self, ctx: &ExecutionContext) {
+    async fn handle_auto_plan_completion(
+        &self,
+        ctx: &ExecutionContext,
+        error_summary: Option<&str>,
+    ) {
         let pool = &self.db.pool;
         let task_id = ctx.task.id;
 
-        let success = matches!(
-            ctx.execution_process.status,
-            ExecutionProcessStatus::Completed
-        ) && ctx.execution_process.exit_code == Some(0);
-
-        if !success {
-            tracing::warn!(
-                "AutoPlan execution failed for task {} (status={:?}, exit_code={:?})",
-                task_id,
-                ctx.execution_process.status,
-                ctx.execution_process.exit_code
-            );
-            let _ = Task::update_plan(pool, task_id, "Plan generation failed", "failed").await;
-            return;
-        }
-
-        // Extract plan from MsgStore by scanning stdout for ExitPlanMode tool use
+        // Always attempt plan extraction first — the process may have been
+        // intentionally killed after ExitPlanMode (stop_after_plan behaviour)
+        // so the plan text is already in the logs even if exit status is non-zero.
         let plan_text = self
             .extract_plan_from_msg_store(&ctx.execution_process.id)
             .await;
+
+        if plan_text.is_none() {
+            let success = matches!(
+                ctx.execution_process.status,
+                ExecutionProcessStatus::Completed
+            ) && ctx.execution_process.exit_code == Some(0);
+
+            if !success {
+                tracing::warn!(
+                    "AutoPlan execution failed for task {} (status={:?}, exit_code={:?})",
+                    task_id,
+                    ctx.execution_process.status,
+                    ctx.execution_process.exit_code
+                );
+                let failure_msg = match error_summary {
+                    Some(summary) => format!("Plan generation failed: {}", summary),
+                    None => "Plan generation failed".to_string(),
+                };
+                let _ = Task::update_plan(pool, task_id, &failure_msg, "failed").await;
+                return;
+            }
+        }
 
         match plan_text {
             Some(plan) => {
@@ -578,15 +590,32 @@ impl LocalContainerService {
         // Scan in reverse for the ExitPlanMode tool call
         for msg in history.iter().rev() {
             if let LogMsg::Stdout(text) = msg {
-                // Each stdout line is a JSON object from Claude. Look for tool_use with ExitPlanMode
                 for line in text.lines() {
                     if !line.contains("ExitPlanMode") {
                         continue;
                     }
-                    // Try to parse as JSON and extract the plan
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-                        // Claude stdout format: look in content array for tool_use items
-                        if let Some(content) = val.get("content").and_then(|c| c.as_array()) {
+                        // Claude Code emits ExitPlanMode as a top-level tool_use event:
+                        // {"type":"tool_use","name":"ExitPlanMode","input":{"plan":"..."}}
+                        if val.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                            && val.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+                        {
+                            if let Some(plan) = val
+                                .get("input")
+                                .and_then(|i| i.get("plan"))
+                                .and_then(|p| p.as_str())
+                            {
+                                return Some(plan.to_string());
+                            }
+                        }
+
+                        // Also check assistant message format (content array under message)
+                        // for backwards compatibility
+                        if let Some(content) = val
+                            .get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| c.as_array())
+                        {
                             for item in content {
                                 if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
                                     && item.get("name").and_then(|n| n.as_str())
@@ -608,6 +637,78 @@ impl LocalContainerService {
         }
 
         None
+    }
+
+    /// Scan MsgStore history for result-type messages and extract error information.
+    async fn extract_error_summary_from_msg_store(&self, exec_id: &Uuid) -> Option<String> {
+        let store = self.get_msg_store_by_id(exec_id).await?;
+        let history = store.get_history();
+
+        let mut collected_errors: Vec<String> = Vec::new();
+
+        // Scan in reverse for result messages containing errors
+        for msg in history.iter().rev() {
+            if let LogMsg::Stdout(text) = msg {
+                for line in text.lines() {
+                    if !line.contains("\"result\"") && !line.contains("\"type\":\"result\"") {
+                        continue;
+                    }
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                        // Check for "errors" array
+                        if let Some(errors) = val.get("errors").and_then(|e| e.as_array()) {
+                            for err in errors {
+                                if let Some(s) = err.as_str() {
+                                    collected_errors.push(s.to_string());
+                                }
+                            }
+                        }
+                        // Check for singular "error" string
+                        if let Some(error) = val.get("error").and_then(|e| e.as_str()) {
+                            collected_errors.push(error.to_string());
+                        }
+                    }
+                }
+            }
+            // Stop early once we have errors
+            if !collected_errors.is_empty() {
+                break;
+            }
+        }
+
+        if collected_errors.is_empty() {
+            return None;
+        }
+
+        Some(Self::categorize_error_messages(&collected_errors))
+    }
+
+    /// Categorize error messages into user-friendly summaries.
+    fn categorize_error_messages(errors: &[String]) -> String {
+        let joined = errors.join(" ");
+        let lower = joined.to_lowercase();
+
+        if lower.contains("429") || lower.contains("rate limit") {
+            "API rate limit reached".to_string()
+        } else if lower.contains("401") || lower.contains("403") || lower.contains("unauthorized") {
+            "API authentication failed".to_string()
+        } else if lower.contains("500") || lower.contains("502") || lower.contains("503") {
+            "API server error".to_string()
+        } else if lower.contains("econnrefused") || lower.contains("enotfound") {
+            "Network connection error".to_string()
+        } else if lower.contains("aborted")
+            || lower.contains("timeout")
+            || lower.contains("timed out")
+        {
+            "Request timed out".to_string()
+        } else {
+            // Fallback: first error truncated
+            let first = &errors[0];
+            if first.len() > 120 {
+                format!("{}...", &first[..120])
+            } else {
+                first.clone()
+            }
+        }
     }
 
     /// Spawn a background task that polls the child process for completion and
@@ -674,12 +775,36 @@ impl LocalContainerService {
                 Err(_) => (None, ExecutionProcessStatus::Failed),
             };
 
+            let is_failed_or_killed = matches!(
+                status,
+                ExecutionProcessStatus::Failed | ExecutionProcessStatus::Killed
+            );
+
             if !ExecutionProcess::was_stopped(&db.pool, exec_id).await
                 && let Err(e) =
                     ExecutionProcess::update_completion(&db.pool, exec_id, status, exit_code).await
             {
                 tracing::error!("Failed to update execution process completion: {}", e);
             }
+
+            // Extract and store error summary for failed/killed processes
+            let error_summary = if is_failed_or_killed {
+                if let Some(summary) = container
+                    .extract_error_summary_from_msg_store(&exec_id)
+                    .await
+                {
+                    if let Err(e) =
+                        ExecutionProcess::update_error_summary(&db.pool, exec_id, &summary).await
+                    {
+                        tracing::warn!("Failed to store error summary: {}", e);
+                    }
+                    Some(summary)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
             if let Ok(ctx) = ExecutionProcess::load_context(&db.pool, exec_id).await {
                 // Update executor session summary if available
@@ -692,7 +817,9 @@ impl LocalContainerService {
                     ctx.execution_process.run_reason,
                     ExecutionProcessRunReason::AutoPlan
                 ) {
-                    container.handle_auto_plan_completion(&ctx).await;
+                    container
+                        .handle_auto_plan_completion(&ctx, error_summary.as_deref())
+                        .await;
                     // Clean up the isolated plan workspace directory
                     Self::cleanup_workspace(&container.db, &ctx.workspace).await;
                     // Fall through to MsgStore cleanup below
