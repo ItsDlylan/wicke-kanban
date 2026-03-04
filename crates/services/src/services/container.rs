@@ -64,7 +64,9 @@ use uuid::Uuid;
 use crate::services::{
     git_host::GitHostProvider,
     notification::NotificationService,
-    workspace_manager::{WorkspaceError as WorkspaceManagerError, WorkspaceManager},
+    workspace_manager::{
+        RepoWorkspaceInput, WorkspaceError as WorkspaceManagerError, WorkspaceManager,
+    },
     worktree_manager::WorktreeError,
 };
 pub type ContainerRef = String;
@@ -1577,41 +1579,42 @@ pub trait ContainerService {
             }
         }
 
-        tokio::fs::create_dir_all(&workspace_dir)
+        let branch_name = format!("auto-plan-{}", short_uuid(&workspace_id));
+
+        // Use repo name as agent_working_dir so the executor runs inside the repo
+        let agent_working_dir = repos[0].name.clone();
+
+        // Create proper git worktrees for isolation — protects the main codebase
+        // in case the agent goes off-plan during planning
+        let repo_inputs: Vec<RepoWorkspaceInput> = repos
+            .iter()
+            .map(|r| {
+                RepoWorkspaceInput::new(
+                    r.clone(),
+                    r.default_target_branch
+                        .clone()
+                        .unwrap_or_else(|| "main".to_string()),
+                )
+            })
+            .collect();
+
+        WorkspaceManager::create_workspace(&workspace_dir, &repo_inputs, &branch_name)
             .await
             .map_err(|e| {
                 ContainerError::Other(anyhow!(
-                    "Failed to create plan workspace directory {}: {}",
+                    "Failed to create plan workspace at {}: {}",
                     workspace_dir.display(),
                     e
                 ))
             })?;
 
-        // Symlink each repo into the workspace dir so the executor sees
-        // workspace_dir/repo_name pointing to the actual repo
-        for repo in &repos {
-            let link_path = workspace_dir.join(&repo.name);
-            let target = Path::new(&repo.path);
-            tokio::fs::symlink(target, &link_path).await.map_err(|e| {
-                ContainerError::Other(anyhow!(
-                    "Failed to symlink {} -> {}: {}",
-                    link_path.display(),
-                    target.display(),
-                    e
-                ))
-            })?;
-        }
-
         let container_dir = workspace_dir.to_string_lossy().to_string();
-
-        // Use repo name as agent_working_dir so the executor runs inside the repo
-        let agent_working_dir = repos[0].name.clone();
 
         // Create workspace record pointing container_ref at the isolated directory
         let workspace = Workspace::create(
             pool,
             &CreateWorkspace {
-                branch: format!("auto-plan-{}", short_uuid(&workspace_id)),
+                branch: branch_name,
                 agent_working_dir: Some(agent_working_dir.clone()),
             },
             workspace_id,
@@ -1645,13 +1648,14 @@ pub trait ContainerService {
         )
         .await?;
 
-        // Build the plan-mode coding agent action with working_dir set to the repo name
+        // Build the auto-plan coding agent action with working_dir set to the repo name.
+        // AUTO_PLAN variant auto-approves ExitPlanMode and stops the process after the plan.
         let action = ExecutorAction::new(
             ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
                 prompt,
                 executor_profile_id: ExecutorProfileId {
                     executor: executors::executors::BaseCodingAgent::ClaudeCode,
-                    variant: Some("PLAN".to_string()),
+                    variant: Some("AUTO_PLAN".to_string()),
                 },
                 working_dir: Some(agent_working_dir),
             }),
