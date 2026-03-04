@@ -115,6 +115,10 @@ pub struct ClaudeCode {
     pub dangerously_skip_permissions: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disable_api_key: Option<bool>,
+    /// When true, ExitPlanMode is auto-approved and the process is stopped
+    /// immediately after the plan is captured (used by auto-plan generation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_after_plan: Option<bool>,
     #[serde(flatten)]
     pub cmd: CmdOverrides,
 
@@ -191,19 +195,38 @@ impl ClaudeCode {
 
         // Add PreToolUse hooks based on plan/approvals settings
         if self.plan.unwrap_or(false) {
-            hooks.insert(
-                "PreToolUse".to_string(),
-                serde_json::json!([
-                    {
-                        "matcher": "^(ExitPlanMode|AskUserQuestion)$",
-                        "hookCallbackIds": ["tool_approval"],
-                    },
-                    {
-                        "matcher": "^(?!(ExitPlanMode|AskUserQuestion)$).*",
-                        "hookCallbackIds": [AUTO_APPROVE_CALLBACK_ID],
-                    }
-                ]),
-            );
+            if self.stop_after_plan.unwrap_or(false) {
+                // Auto-plan: AskUserQuestion routed through can_use_tool where it
+                // is auto-denied (no human in loop). ExitPlanMode is auto-approved
+                // in can_use_tool; the client stops the process after it fires.
+                hooks.insert(
+                    "PreToolUse".to_string(),
+                    serde_json::json!([
+                        {
+                            "matcher": "^AskUserQuestion$",
+                            "hookCallbackIds": ["tool_approval"],
+                        },
+                        {
+                            "matcher": "^(?!AskUserQuestion$).*",
+                            "hookCallbackIds": [AUTO_APPROVE_CALLBACK_ID],
+                        }
+                    ]),
+                );
+            } else {
+                hooks.insert(
+                    "PreToolUse".to_string(),
+                    serde_json::json!([
+                        {
+                            "matcher": "^(ExitPlanMode|AskUserQuestion)$",
+                            "hookCallbackIds": ["tool_approval"],
+                        },
+                        {
+                            "matcher": "^(?!(ExitPlanMode|AskUserQuestion)$).*",
+                            "hookCallbackIds": [AUTO_APPROVE_CALLBACK_ID],
+                        }
+                    ]),
+                );
+            }
         } else if self.approvals.unwrap_or(false) {
             hooks.insert(
                 "PreToolUse".to_string(),
@@ -384,6 +407,7 @@ impl ClaudeCode {
         // Spawn task to handle the SDK client with control protocol
         let prompt_clone = combined_prompt.clone();
         let approvals_clone = self.approvals_service.clone();
+        let stop_after_plan = self.stop_after_plan.unwrap_or(false);
         let repo_context = env.repo_context.clone();
         let commit_reminder_prompt = env.commit_reminder_prompt.clone();
         let cancel_for_task = cancel.clone();
@@ -392,6 +416,7 @@ impl ClaudeCode {
             let client = ClaudeAgentClient::new(
                 log_writer.clone(),
                 approvals_clone,
+                stop_after_plan,
                 repo_context,
                 commit_reminder_prompt,
                 cancel_for_task.clone(),
@@ -1853,6 +1878,8 @@ pub enum ClaudeJson {
         result: Option<serde_json::Value>,
         #[serde(default)]
         error: Option<String>,
+        #[serde(default)]
+        errors: Vec<String>,
         #[serde(default, alias = "numTurns")]
         num_turns: Option<u32>,
         #[serde(default, alias = "sessionId")]

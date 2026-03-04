@@ -154,6 +154,13 @@ impl ClaudeAgentClient {
                 updated_input: input,
                 updated_permissions: None,
             })
+        } else if self.stop_after_plan && tool_name == "AskUserQuestion" {
+            // Auto-deny AskUserQuestion during auto-plan — there is no human
+            // in the loop to answer, so deny immediately to avoid hanging.
+            Ok(PermissionResult::Deny {
+                message: "AskUserQuestion is not available during auto-plan. Proceed without asking questions.".to_string(),
+                interrupt: Some(false),
+            })
         } else if let Some(latest_tool_use_id) = tool_use_id {
             self.handle_approval(latest_tool_use_id, tool_name, input)
                 .await
