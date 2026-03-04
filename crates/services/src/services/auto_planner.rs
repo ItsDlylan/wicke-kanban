@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use db::models::{
+    pending_approval::PendingApprovalRecord,
     project_repo::ProjectRepo,
     spec_sheet::{CreateSpecSheet, SpecSheet},
     task::{Task, TaskStatus},
@@ -24,10 +25,26 @@ pub enum AutoPlannerError {
 /// Recover tasks whose plan_status is stuck at "generating" (e.g. from a server restart)
 /// by resetting them to "pending" and re-spawning plan generation.
 /// Also ensures these tasks have PlanGenerating status.
+///
+/// Tasks that have pending approvals (AskUserQuestion waiting for user input) are SKIPPED —
+/// those will be handled by the pending approval recovery flow instead.
 pub async fn recover_stuck_plans<C: ContainerService + Clone + Send + Sync + 'static>(
     pool: &SqlitePool,
     container: C,
 ) {
+    // Collect task IDs that have pending approvals — these should NOT be re-planned
+    let tasks_with_pending_approvals: std::collections::HashSet<Uuid> =
+        match PendingApprovalRecord::find_pending_orphaned(pool).await {
+            Ok(approvals) => approvals.iter().map(|a| a.task_id).collect(),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to check for pending approvals during recovery: {}",
+                    e
+                );
+                std::collections::HashSet::new()
+            }
+        };
+
     match Task::reset_stuck_generating_plans(pool).await {
         Ok(tasks) if !tasks.is_empty() => {
             tracing::info!(
@@ -35,6 +52,15 @@ pub async fn recover_stuck_plans<C: ContainerService + Clone + Send + Sync + 'st
                 tasks.len()
             );
             for task in tasks {
+                // Skip tasks with pending approvals — let the user answer first
+                if tasks_with_pending_approvals.contains(&task.id) {
+                    tracing::info!(
+                        "Skipping recovery of task {} — has pending approval awaiting user input",
+                        task.id
+                    );
+                    continue;
+                }
+
                 // Ensure task is in PlanGenerating status
                 if task.status != TaskStatus::PlanGenerating {
                     let _ = Task::update_status(pool, task.id, TaskStatus::PlanGenerating).await;
@@ -281,6 +307,7 @@ pub fn spawn_auto_plan<C: ContainerService + Clone + Send + Sync + 'static>(
 /// After plan generation succeeds, automatically generate a spec sheet and decompose the task
 /// into child tasks so it's prepared for Ralph execution. Failures are logged but non-fatal.
 /// This function is idempotent — it skips steps that have already completed (e.g. on recovery).
+/// Returns `true` if spec generation and decomposition succeeded, `false` on failure.
 pub async fn auto_prepare_for_ralph(
     pool: &SqlitePool,
     task_id: Uuid,
@@ -289,7 +316,7 @@ pub async fn auto_prepare_for_ralph(
     description: Option<&str>,
     plan_text: &str,
     working_dir: &Path,
-) {
+) -> bool {
     // Step 1: Check if spec already exists (idempotent on recovery)
     let stored_spec = match SpecSheet::find_by_task_id(pool, task_id).await {
         Ok(Some(existing)) => {
@@ -319,12 +346,12 @@ pub async fn auto_prepare_for_ralph(
                             task_id,
                             e
                         );
-                        return;
+                        return false;
                     }
                 },
                 Ok(Err(e)) => {
                     tracing::warn!("Auto spec generation failed for task {}: {}", task_id, e);
-                    return;
+                    return false;
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -332,7 +359,7 @@ pub async fn auto_prepare_for_ralph(
                         task_id,
                         e
                     );
-                    return;
+                    return false;
                 }
             };
 
@@ -358,7 +385,7 @@ pub async fn auto_prepare_for_ralph(
                         task_id,
                         e
                     );
-                    return;
+                    return false;
                 }
             }
         }
@@ -373,7 +400,7 @@ pub async fn auto_prepare_for_ralph(
                 task_id,
                 children.len()
             );
-            return;
+            return true;
         }
     }
 
@@ -395,12 +422,13 @@ pub async fn auto_prepare_for_ralph(
                     task_id,
                     e
                 );
-                return;
+                // Spec was generated but decomposition failed — still consider success
+                return true;
             }
         },
         Ok(Err(e)) => {
             tracing::warn!("Auto decomposition failed for task {}: {}", task_id, e);
-            return;
+            return true;
         }
         Err(e) => {
             tracing::warn!(
@@ -408,7 +436,7 @@ pub async fn auto_prepare_for_ralph(
                 task_id,
                 e
             );
-            return;
+            return true;
         }
     };
 
@@ -429,4 +457,162 @@ pub async fn auto_prepare_for_ralph(
             );
         }
     }
+
+    true
+}
+
+/// Recover pending approvals that were orphaned by a server restart.
+/// - Times out approvals past their deadline
+/// - Keeps valid orphaned approvals as 'pending' in DB for frontend to pick up
+pub async fn recover_pending_approvals(pool: &SqlitePool) {
+    // First, time out any expired approvals
+    match PendingApprovalRecord::timeout_expired(pool).await {
+        Ok(count) if count > 0 => {
+            tracing::info!("Timed out {} expired pending approvals", count);
+        }
+        Err(e) => {
+            tracing::error!("Failed to timeout expired pending approvals: {}", e);
+        }
+        _ => {}
+    }
+
+    // Find orphaned approvals (execution process is dead but approval is still pending)
+    match PendingApprovalRecord::find_pending_orphaned(pool).await {
+        Ok(approvals) if !approvals.is_empty() => {
+            tracing::info!(
+                "Found {} orphaned pending approval(s) awaiting user response",
+                approvals.len()
+            );
+            for approval in &approvals {
+                tracing::info!(
+                    "  Orphaned approval {} for task {} (tool: {})",
+                    approval.id,
+                    approval.task_id,
+                    approval.tool_name
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::error!("Failed to find orphaned pending approvals: {}", e);
+        }
+    }
+}
+
+/// Build a plan prompt that includes prior user answers from an AskUserQuestion interaction.
+pub fn build_auto_plan_prompt_with_answers(
+    title: &str,
+    description: Option<&str>,
+    answers: &HashMap<String, String>,
+) -> String {
+    let mut prompt = build_auto_plan_prompt(title, description);
+
+    if !answers.is_empty() {
+        prompt.push_str("\n## Previous User Input\n\n");
+        prompt.push_str(
+            "You previously asked the user questions. Here are their answers — incorporate them directly:\n\n",
+        );
+        for (question, answer) in answers {
+            prompt.push_str(&format!("**Q:** {}\n**A:** {}\n\n", question, answer));
+        }
+        prompt.push_str("Do NOT re-ask any of the above questions. Use the answers as given.\n");
+    }
+
+    prompt
+}
+
+/// Spawn a new auto-plan that incorporates user answers from a recovered approval.
+/// This re-runs the plan generation with the Q&A context injected into the prompt.
+pub fn spawn_auto_plan_with_answers<C: ContainerService + Clone + Send + Sync + 'static>(
+    container: C,
+    pool: SqlitePool,
+    task_id: Uuid,
+    project_id: Uuid,
+    title: String,
+    description: Option<String>,
+    answers: HashMap<String, String>,
+) {
+    tokio::spawn(async move {
+        // Set plan_status = "generating" and task status to PlanGenerating
+        if let Err(e) = Task::update_plan_status(&pool, task_id, "generating").await {
+            tracing::error!(
+                "Failed to set plan_status to generating for task {}: {}",
+                task_id,
+                e
+            );
+            return;
+        }
+        if let Err(e) = Task::update_status(&pool, task_id, TaskStatus::PlanGenerating).await {
+            tracing::error!(
+                "Failed to set task {} to PlanGenerating status: {}",
+                task_id,
+                e
+            );
+        }
+
+        // Get working directory from project repos
+        let repo_path = match ProjectRepo::find_repos_for_project(&pool, project_id).await {
+            Ok(repos) if !repos.is_empty() => repos[0].path.to_string_lossy().to_string(),
+            Ok(_) => {
+                tracing::error!(
+                    "No repos found for project {} while re-generating plan for task {}",
+                    project_id,
+                    task_id
+                );
+                let _ = Task::update_plan(
+                    &pool,
+                    task_id,
+                    "No repositories configured for this project.",
+                    "failed",
+                )
+                .await;
+                return;
+            }
+            Err(e) => {
+                tracing::error!("Failed to find repos for project {}: {}", project_id, e);
+                let _ = Task::update_plan(
+                    &pool,
+                    task_id,
+                    &format!("Failed to find repos: {e}"),
+                    "failed",
+                )
+                .await;
+                return;
+            }
+        };
+
+        // Get the task record for start_plan_workspace
+        let task = match Task::find_by_id(&pool, task_id).await {
+            Ok(Some(t)) => t,
+            Ok(None) => {
+                tracing::error!("Task {} not found for auto-plan with answers", task_id);
+                return;
+            }
+            Err(e) => {
+                tracing::error!("Failed to find task {}: {}", task_id, e);
+                return;
+            }
+        };
+
+        let prompt = build_auto_plan_prompt_with_answers(&title, description.as_deref(), &answers);
+
+        // Start the interactive plan workspace — the exit monitor handles the rest
+        if let Err(e) = container
+            .start_plan_workspace(&task, &repo_path, prompt)
+            .await
+        {
+            tracing::error!(
+                "Failed to start plan workspace with answers for task {}: {}",
+                task_id,
+                e
+            );
+            let _ = Task::update_plan(
+                &pool,
+                task_id,
+                &format!("Failed to start plan generation: {e}"),
+                "failed",
+            )
+            .await;
+        }
+    });
 }

@@ -546,7 +546,7 @@ impl LocalContainerService {
                 let title = ctx.task.title.clone();
                 let description = ctx.task.description.clone();
                 tokio::spawn(async move {
-                    auto_planner::auto_prepare_for_ralph(
+                    let success = auto_planner::auto_prepare_for_ralph(
                         &pool_clone,
                         task_id,
                         project_id,
@@ -557,12 +557,21 @@ impl LocalContainerService {
                     )
                     .await;
 
-                    if let Err(e) =
-                        Task::update_status(&pool_clone, task_id, TaskStatus::Ready).await
-                    {
+                    let (target_status, status_name) = if success {
+                        (TaskStatus::Ready, "Ready")
+                    } else {
+                        tracing::warn!(
+                            "AutoPlan: spec generation failed for task {}, moving to SpecReview",
+                            task_id
+                        );
+                        (TaskStatus::SpecReview, "SpecReview")
+                    };
+
+                    if let Err(e) = Task::update_status(&pool_clone, task_id, target_status).await {
                         tracing::error!(
-                            "Failed to transition task {} to Ready status: {}",
+                            "Failed to transition task {} to {} status: {}",
                             task_id,
+                            status_name,
                             e
                         );
                     }

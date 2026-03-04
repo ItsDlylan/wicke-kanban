@@ -176,6 +176,7 @@ pub fn run_decomposition(prompt: &str, working_dir: &Path) -> Result<String, Dec
     let output = std::process::Command::new("claude")
         .args(["--print", "--permission-mode=plan", "-p", prompt])
         .current_dir(working_dir)
+        .env_remove("CLAUDECODE")
         .output()
         .map_err(|e| DecomposerError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;
 

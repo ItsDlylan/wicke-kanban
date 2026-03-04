@@ -70,6 +70,7 @@ pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, S
     let output = std::process::Command::new("claude")
         .args(["--print", "--permission-mode=plan", "-p", prompt])
         .current_dir(working_dir)
+        .env_remove("CLAUDECODE")
         .output()
         .map_err(|e| SpecGeneratorError::ExecutionFailed(format!("Failed to spawn claude: {e}")))?;
 
