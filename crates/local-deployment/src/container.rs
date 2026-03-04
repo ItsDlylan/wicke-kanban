@@ -1366,9 +1366,13 @@ impl ContainerService for LocalContainerService {
             let repositories =
                 WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id).await?;
             // Skip worktree creation if the workspace points directly at the original repo
+            // or uses symlinks (e.g. auto-plan workspaces)
             let is_direct_repo = repositories.len() == 1
                 && workspace_dir.join(&repositories[0].name) == repositories[0].path;
-            if !repositories.is_empty() && !is_direct_repo {
+            let has_symlinked_repos = repositories
+                .iter()
+                .any(|repo| workspace_dir.join(&repo.name).is_symlink());
+            if !repositories.is_empty() && !is_direct_repo && !has_symlinked_repos {
                 WorkspaceManager::ensure_workspace_exists(
                     &workspace_dir,
                     &repositories,
@@ -1509,10 +1513,13 @@ impl ContainerService for LocalContainerService {
         };
 
         // Skip worktree creation if the workspace points directly at the original repo
-        // (e.g., auto-plan workspaces that reuse the repo without a git worktree).
+        // or uses symlinks (e.g., auto-plan workspaces that symlink repos without a git worktree).
         let is_direct_repo = repositories.len() == 1
             && workspace_dir.join(&repositories[0].name) == repositories[0].path;
-        if !is_direct_repo {
+        let has_symlinked_repos = repositories
+            .iter()
+            .any(|repo| workspace_dir.join(&repo.name).is_symlink());
+        if !is_direct_repo && !has_symlinked_repos {
             WorkspaceManager::ensure_workspace_exists(
                 &workspace_dir,
                 &repositories,
