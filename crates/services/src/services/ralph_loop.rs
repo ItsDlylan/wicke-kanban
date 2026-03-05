@@ -1,4 +1,5 @@
 use db::models::{
+    ralph_session::{RalphSession, RalphSessionStatus, RalphSessionTask},
     task::{Task, TaskStatus},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
@@ -15,8 +16,10 @@ use crate::services::container::ContainerService;
 pub enum AdvanceResult {
     /// A new child task was started.
     NextChildStarted,
-    /// All children are complete; the parent loop is finished.
+    /// All tasks in the ralph session are complete.
     AllComplete,
+    /// Advanced to the next parent task in the ralph session.
+    NextSessionTaskStarted,
     /// No eligible children but not all done — possible dependency deadlock.
     Deadlocked,
 }
@@ -106,7 +109,8 @@ pub async fn complete_ralph_loop(pool: &SqlitePool, task_id: Uuid) -> Result<(),
 }
 
 /// Called when a child task's execution finishes.
-/// Advances the Ralph loop to the next eligible child, or completes the loop.
+/// Advances the Ralph loop to the next eligible child, advances to the next
+/// parent task in the ralph session, or completes the session.
 pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
     pool: &SqlitePool,
     container: &C,
@@ -169,11 +173,33 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
         // (across all sprints) are done before completing.
         if Task::all_parent_children_done(pool, parent_task.id).await? {
             tracing::info!(
-                "All children done across all sprints, completing Ralph loop for parent task {}",
+                "All children done for parent task {}, checking ralph session for next task",
                 parent_task.id
             );
-            complete_ralph_loop(pool, parent_task.id).await?;
-            Ok(AdvanceResult::AllComplete)
+
+            // Try to advance to the next parent task in the ralph session
+            match advance_ralph_session(
+                pool,
+                container,
+                &parent_task,
+                &parent_workspace,
+                executor_profile_id,
+                repos,
+            )
+            .await?
+            {
+                SessionAdvanceResult::NextTaskStarted => Ok(AdvanceResult::NextSessionTaskStarted),
+                SessionAdvanceResult::SessionComplete => {
+                    // This was the last task — move it to QA for user review
+                    complete_ralph_loop(pool, parent_task.id).await?;
+                    Ok(AdvanceResult::AllComplete)
+                }
+                SessionAdvanceResult::NoSession => {
+                    // Not part of a session — just complete this single task
+                    complete_ralph_loop(pool, parent_task.id).await?;
+                    Ok(AdvanceResult::AllComplete)
+                }
+            }
         } else {
             tracing::info!(
                 "Sprint workspace {} done, but parent {} has other active sprints",
@@ -191,6 +217,111 @@ pub async fn advance_ralph_loop<C: ContainerService + Sync + ?Sized>(
         Task::update_status(pool, parent_task.id, TaskStatus::QA).await?;
         Ok(AdvanceResult::Deadlocked)
     }
+}
+
+/// Result of attempting to advance to the next task in a ralph session.
+#[derive(Debug)]
+enum SessionAdvanceResult {
+    /// Started the next parent task's children in the session.
+    NextTaskStarted,
+    /// All tasks in the session are complete.
+    SessionComplete,
+    /// The parent task is not part of a ralph session.
+    NoSession,
+}
+
+/// After a parent task's children all complete, check if there are more tasks
+/// in the ralph session. If so, advance to the next one using the same worktree.
+async fn advance_ralph_session<C: ContainerService + Sync + ?Sized>(
+    pool: &SqlitePool,
+    container: &C,
+    completed_parent: &Task,
+    parent_workspace: &Workspace,
+    executor_profile_id: &ExecutorProfileId,
+    repos: &[WorkspaceRepoInput],
+) -> Result<SessionAdvanceResult, RalphLoopError> {
+    // Find the ralph session this task belongs to
+    let session = match RalphSession::find_active_by_task_id(pool, completed_parent.id).await? {
+        Some(s) => s,
+        None => return Ok(SessionAdvanceResult::NoSession),
+    };
+
+    tracing::info!(
+        "Ralph session {}: parent task '{}' ({}) completed, checking for next task",
+        session.id,
+        completed_parent.title,
+        completed_parent.id
+    );
+
+    // Find the next task in the session after the current one
+    let next_session_task =
+        RalphSessionTask::find_next_task_after(pool, session.id, completed_parent.id).await?;
+
+    match next_session_task {
+        None => {
+            // This was the last task — session is complete.
+            // Don't mark as Done here; let the caller move it to QA for PR review.
+            tracing::info!("Ralph session {} complete — all tasks done", session.id);
+            RalphSession::update_status(pool, session.id, RalphSessionStatus::Completed).await?;
+            return Ok(SessionAdvanceResult::SessionComplete);
+        }
+        Some(ref _next) => {
+            // Mark the completed parent as Done (no intermediate review needed)
+            Task::update_status(pool, completed_parent.id, TaskStatus::Done).await?;
+        }
+    }
+
+    let next_session_task = next_session_task.unwrap();
+
+    let next_task = Task::find_by_id(pool, next_session_task.task_id)
+        .await?
+        .ok_or(RalphLoopError::ParentTaskNotFound)?;
+
+    tracing::info!(
+        "Ralph session {}: advancing to next task '{}' ({})",
+        session.id,
+        next_task.title,
+        next_task.id
+    );
+
+    // Update the shared workspace to point to the new parent task
+    Workspace::update_task_id(pool, parent_workspace.id, next_task.id).await?;
+
+    // Assign the next task's children to the shared workspace
+    let children = Task::find_by_parent_task_id(pool, next_task.id).await?;
+    for child in &children {
+        Task::update_parent_workspace_id(pool, child.id, Some(parent_workspace.id)).await?;
+    }
+
+    // Re-fetch workspace after update
+    let workspace = Workspace::find_by_id(pool, parent_workspace.id)
+        .await?
+        .ok_or(RalphLoopError::ParentWorkspaceNotFound)?;
+
+    // Start the first eligible child of the new parent task
+    if let Some(next_child) = Task::find_next_eligible_child(pool, workspace.id).await? {
+        tracing::info!(
+            "Starting first child of next session task: {} ({})",
+            next_child.title,
+            next_child.id
+        );
+        start_child_execution(
+            pool,
+            container,
+            &next_child,
+            &workspace,
+            executor_profile_id,
+            repos,
+        )
+        .await?;
+    } else {
+        tracing::warn!(
+            "Next session task '{}' has no eligible children to start",
+            next_task.title
+        );
+    }
+
+    Ok(SessionAdvanceResult::NextTaskStarted)
 }
 
 /// Start execution for a child task, reusing the parent's worktree.

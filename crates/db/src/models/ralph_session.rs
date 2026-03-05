@@ -191,4 +191,49 @@ impl RalphSessionTask {
         .fetch_optional(pool)
         .await
     }
+
+    /// Get the next task in the session after the given task (by execution order),
+    /// excluding tasks that are already done/qa/cancelled.
+    pub async fn find_next_task_after(
+        pool: &SqlitePool,
+        session_id: Uuid,
+        current_task_id: Uuid,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        // Get the execution order of the current task
+        let current = sqlx::query_as!(
+            RalphSessionTask,
+            r#"SELECT ralph_session_id as "ralph_session_id!: Uuid",
+                      task_id as "task_id!: Uuid",
+                      execution_order as "execution_order!: i32"
+               FROM ralph_session_tasks
+               WHERE ralph_session_id = $1 AND task_id = $2"#,
+            session_id,
+            current_task_id,
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        let current_order = match current {
+            Some(c) => c.execution_order,
+            None => return Ok(None),
+        };
+
+        sqlx::query_as!(
+            RalphSessionTask,
+            r#"SELECT rst.ralph_session_id as "ralph_session_id!: Uuid",
+                      rst.task_id as "task_id!: Uuid",
+                      rst.execution_order as "execution_order!: i32"
+               FROM ralph_session_tasks rst
+               JOIN tasks t ON t.id = rst.task_id
+               WHERE rst.ralph_session_id = $1
+                 AND rst.execution_order > $2
+                 AND t.status NOT IN ('done', 'qa', 'cancelled')
+               ORDER BY rst.execution_order ASC
+               LIMIT 1"#,
+            session_id,
+            current_order,
+        )
+        .fetch_optional(pool)
+        .await
+    }
 }

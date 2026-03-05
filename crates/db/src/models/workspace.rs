@@ -187,6 +187,22 @@ impl Workspace {
         })
     }
 
+    /// Update the owning task for this workspace (used when ralph session advances to next task)
+    pub async fn update_task_id(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+        task_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE workspaces SET task_id = $1, updated_at = datetime('now') WHERE id = $2",
+            task_id,
+            workspace_id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Update container reference
     pub async fn update_container_ref(
         pool: &SqlitePool,

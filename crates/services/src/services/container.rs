@@ -451,6 +451,20 @@ pub trait ContainerService {
                         )
                         .await
                         {
+                            Ok(super::ralph_loop::AdvanceResult::AllComplete) => {
+                                self.notification_service()
+                                    .notify(
+                                        &format!("Ralph Session Complete: {}", parent_task.title),
+                                        "All tasks done. PR is ready for review.",
+                                    )
+                                    .await;
+                            }
+                            Ok(super::ralph_loop::AdvanceResult::NextSessionTaskStarted) => {
+                                tracing::info!(
+                                    "Ralph session advanced to next task after completing '{}'",
+                                    parent_task.title
+                                );
+                            }
                             Ok(_) => {}
                             Err(e) => {
                                 tracing::error!("Failed to advance Ralph loop: {e}");

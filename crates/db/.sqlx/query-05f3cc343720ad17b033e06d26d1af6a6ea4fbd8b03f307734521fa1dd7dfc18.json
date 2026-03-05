@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT ralph_session_id as \"ralph_session_id!: Uuid\",\n                      task_id as \"task_id!: Uuid\",\n                      execution_order as \"execution_order!: i32\"\n               FROM ralph_session_tasks\n               WHERE ralph_session_id = $1 AND task_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "name": "ralph_session_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "execution_order!: i32",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "05f3cc343720ad17b033e06d26d1af6a6ea4fbd8b03f307734521fa1dd7dfc18"
+}
