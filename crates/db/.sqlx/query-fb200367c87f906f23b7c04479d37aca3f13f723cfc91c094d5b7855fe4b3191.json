@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE pending_approvals\n               SET status = 'cancelled', responded_at = datetime('now', 'subsec')\n               WHERE execution_process_id = $1 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "fb200367c87f906f23b7c04479d37aca3f13f723cfc91c094d5b7855fe4b3191"
+}

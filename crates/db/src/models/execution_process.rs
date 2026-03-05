@@ -70,6 +70,7 @@ pub struct ExecutionProcess {
     pub executor_action: sqlx::types::Json<ExecutorActionField>,
     pub status: ExecutionProcessStatus,
     pub exit_code: Option<i64>,
+    pub error_summary: Option<String>,
     /// dropped: true if this process is excluded from the current
     /// history view (due to restore/trimming). Hidden from logs/timeline;
     /// still listed in the Processes tab.
@@ -145,6 +146,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -219,6 +221,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -246,6 +249,7 @@ impl ExecutionProcess {
                       ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                       ep.status          as "status!: ExecutionProcessStatus",
                       ep.exit_code,
+                      ep.error_summary,
                       ep.dropped as "dropped!: bool",
                       ep.started_at      as "started_at!: DateTime<Utc>",
                       ep.completed_at    as "completed_at?: DateTime<Utc>",
@@ -273,6 +277,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -292,7 +297,7 @@ impl ExecutionProcess {
         sqlx::query_as!(
             ExecutionProcess,
             r#"SELECT ep.id as "id!: Uuid", ep.session_id as "session_id!: Uuid", ep.run_reason as "run_reason!: ExecutionProcessRunReason", ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
-                      ep.status as "status!: ExecutionProcessStatus", ep.exit_code,
+                      ep.status as "status!: ExecutionProcessStatus", ep.exit_code, ep.error_summary,
                       ep.dropped as "dropped!: bool", ep.started_at as "started_at!: DateTime<Utc>", ep.completed_at as "completed_at?: DateTime<Utc>", ep.created_at as "created_at!: DateTime<Utc>", ep.updated_at as "updated_at!: DateTime<Utc>"
                FROM execution_processes ep
                JOIN sessions s ON ep.session_id = s.id
@@ -340,6 +345,7 @@ impl ExecutionProcess {
             ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
             ep.status as "status!: ExecutionProcessStatus",
             ep.exit_code,
+            ep.error_summary,
             ep.dropped as "dropped!: bool",
             ep.started_at as "started_at!: DateTime<Utc>",
             ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -373,6 +379,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -403,6 +410,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",
@@ -498,6 +506,22 @@ impl ExecutionProcess {
         .execute(pool)
         .await?;
 
+        Ok(())
+    }
+
+    /// Update the error_summary field for an execution process
+    pub async fn update_error_summary(
+        pool: &SqlitePool,
+        id: Uuid,
+        summary: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"UPDATE execution_processes SET error_summary = $1 WHERE id = $2"#,
+            summary,
+            id
+        )
+        .execute(pool)
+        .await?;
         Ok(())
     }
 
@@ -630,6 +654,7 @@ impl ExecutionProcess {
                     ep.executor_action as "executor_action!: sqlx::types::Json<ExecutorActionField>",
                     ep.status as "status!: ExecutionProcessStatus",
                     ep.exit_code,
+                    ep.error_summary,
                     ep.dropped as "dropped!: bool",
                     ep.started_at as "started_at!: DateTime<Utc>",
                     ep.completed_at as "completed_at?: DateTime<Utc>",

@@ -734,6 +734,11 @@ pub async fn get_task_attempt_branch_status(
     let pool = &deployment.db().pool;
 
     let repositories = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id).await?;
+
+    if repositories.is_empty() {
+        return Ok(ResponseJson(ApiResponse::success(Vec::new())));
+    }
+
     let workspace_repos = WorkspaceRepo::find_by_workspace_id(pool, workspace.id).await?;
     let target_branches: HashMap<_, _> = workspace_repos
         .iter()

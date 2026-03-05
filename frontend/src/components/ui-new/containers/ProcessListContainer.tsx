@@ -155,6 +155,7 @@ export function ProcessListContainer() {
             runReason={process.run_reason}
             status={process.status}
             startedAt={process.started_at}
+            errorSummary={process.error_summary}
             selected={process.id === selectedProcessId}
             onClick={() => handleSelectProcess(process.id)}
           />

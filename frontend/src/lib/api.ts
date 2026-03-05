@@ -1383,6 +1383,20 @@ export const imagesApi = {
 };
 
 // Approval API
+export interface PendingApprovalRecord {
+  id: string;
+  execution_process_id: string;
+  task_id: string;
+  tool_name: string;
+  tool_input: string;
+  tool_call_id: string | null;
+  status: string;
+  response_input: string | null;
+  created_at: string;
+  timeout_at: string;
+  responded_at: string | null;
+}
+
 export const approvalsApi = {
   respond: async (
     approvalId: string,
@@ -1397,6 +1411,13 @@ export const approvalsApi = {
     });
 
     return handleApiResponse<ApprovalStatus>(res);
+  },
+
+  getPending: async (taskId: string): Promise<PendingApprovalRecord[]> => {
+    const res = await makeRequest(
+      `/api/approvals/pending?task_id=${encodeURIComponent(taskId)}`
+    );
+    return handleApiResponse<PendingApprovalRecord[]>(res);
   },
 };
 

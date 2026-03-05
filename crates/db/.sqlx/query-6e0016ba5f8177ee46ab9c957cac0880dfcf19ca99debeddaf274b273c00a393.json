@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE execution_processes SET error_summary = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6e0016ba5f8177ee46ab9c957cac0880dfcf19ca99debeddaf274b273c00a393"
+}

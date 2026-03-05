@@ -47,6 +47,13 @@
         "null"
       ]
     },
+    "stop_after_plan": {
+      "description": "When true, ExitPlanMode is auto-approved and the process is stopped\nimmediately after the plan is captured (used by auto-plan generation).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "base_command_override": {
       "title": "Base Command Override",
       "description": "Override the base command with a custom command",

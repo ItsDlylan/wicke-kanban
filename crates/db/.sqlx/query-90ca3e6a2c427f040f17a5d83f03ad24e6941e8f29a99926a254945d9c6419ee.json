@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO pending_approvals (id, execution_process_id, task_id, tool_name, tool_input, tool_call_id, timeout_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)\n               RETURNING\n                   id as \"id!\",\n                   execution_process_id as \"execution_process_id!: Uuid\",\n                   task_id as \"task_id!: Uuid\",\n                   tool_name as \"tool_name!\",\n                   tool_input as \"tool_input!\",\n                   tool_call_id,\n                   status as \"status!\",\n                   response_input,\n                   created_at as \"created_at!\",\n                   timeout_at as \"timeout_at!\",\n                   responded_at",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "execution_process_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "tool_name!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_input!",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_call_id",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "response_input",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "timeout_at!",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "responded_at",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "90ca3e6a2c427f040f17a5d83f03ad24e6941e8f29a99926a254945d9c6419ee"
+}

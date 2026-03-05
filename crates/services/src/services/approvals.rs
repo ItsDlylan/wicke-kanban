@@ -9,6 +9,7 @@ use std::{
 use dashmap::DashMap;
 use db::models::{
     execution_process::ExecutionProcess,
+    pending_approval::PendingApprovalRecord,
     task::{Task, TaskStatus},
 };
 use executors::{
@@ -52,6 +53,7 @@ pub struct Approvals {
     pending: Arc<DashMap<String, PendingApproval>>,
     completed: Arc<DashMap<String, ApprovalStatus>>,
     msg_stores: Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>,
+    pool: SqlitePool,
 }
 
 #[derive(Debug, Error)]
@@ -71,11 +73,12 @@ pub enum ApprovalError {
 }
 
 impl Approvals {
-    pub fn new(msg_stores: Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>) -> Self {
+    pub fn new(msg_stores: Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>, pool: SqlitePool) -> Self {
         Self {
             pending: Arc::new(DashMap::new()),
             completed: Arc::new(DashMap::new()),
             msg_stores,
+            pool,
         }
     }
 
@@ -134,6 +137,43 @@ impl Approvals {
             );
         }
 
+        // Persist to DB for crash recovery
+        let pool = self.pool.clone();
+        let db_id = request.id.clone();
+        let db_ep_id = request.execution_process_id;
+        let db_tool_name = request.tool_name.clone();
+        let db_tool_input = serde_json::to_string(&request.tool_input).unwrap_or_default();
+        let db_tool_call_id = request.tool_call_id.clone();
+        let db_timeout_at = request.timeout_at.to_rfc3339();
+        tokio::spawn(async move {
+            // Look up task_id from execution context
+            let task_id = match ExecutionProcess::load_context(&pool, db_ep_id).await {
+                Ok(ctx) => ctx.task.id,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load context for pending approval DB persist (ep={}): {}",
+                        db_ep_id,
+                        e
+                    );
+                    return;
+                }
+            };
+            if let Err(e) = PendingApprovalRecord::create(
+                &pool,
+                &db_id,
+                db_ep_id,
+                task_id,
+                &db_tool_name,
+                &db_tool_input,
+                Some(&db_tool_call_id),
+                &db_timeout_at,
+            )
+            .await
+            {
+                tracing::warn!("Failed to persist pending approval to DB: {}", e);
+            }
+        });
+
         self.spawn_timeout_watcher(req_id.clone(), request.timeout_at, waiter.clone());
         Ok((request, waiter))
     }
@@ -145,7 +185,27 @@ impl Approvals {
         id: &str,
         req: ApprovalResponse,
     ) -> Result<(ApprovalStatus, ToolContext), ApprovalError> {
+        let db_status = match &req.status {
+            ApprovalStatus::Approved => "approved",
+            ApprovalStatus::Denied { .. } => "denied",
+            ApprovalStatus::TimedOut => "timed_out",
+            ApprovalStatus::Pending => "pending",
+        };
+        let db_response_input = req
+            .updated_input
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default());
+
         if let Some((_, p)) = self.pending.remove(id) {
+            // Fast path: in-memory approval still exists
+            // Update DB
+            if let Err(e) =
+                PendingApprovalRecord::respond(pool, id, db_status, db_response_input.as_deref())
+                    .await
+            {
+                tracing::warn!("Failed to update pending approval in DB: {}", e);
+            }
+
             self.completed.insert(id.to_string(), req.status.clone());
             let _ = p.response_tx.send((req.status.clone(), req.updated_input));
 
@@ -190,7 +250,36 @@ impl Approvals {
         } else if self.completed.contains_key(id) {
             Err(ApprovalError::AlreadyCompleted)
         } else {
-            Err(ApprovalError::NotFound)
+            // Orphaned approval: not in memory but may exist in DB
+            // This handles the recovery case after a server restart.
+            // Check DB BEFORE updating so we can verify it's still pending.
+            match PendingApprovalRecord::find_by_id(pool, id).await {
+                Ok(Some(record)) if record.status == "pending" => {
+                    // Now update DB with the response
+                    if let Err(e) = PendingApprovalRecord::respond(
+                        pool,
+                        id,
+                        db_status,
+                        db_response_input.as_deref(),
+                    )
+                    .await
+                    {
+                        tracing::warn!("Failed to update orphaned pending approval in DB: {}", e);
+                    }
+
+                    tracing::info!(
+                        "Responding to orphaned approval {} for task {}",
+                        id,
+                        record.task_id
+                    );
+                    let tool_ctx = ToolContext {
+                        tool_name: record.tool_name,
+                        execution_process_id: record.execution_process_id,
+                    };
+                    Ok((req.status, tool_ctx))
+                }
+                _ => Err(ApprovalError::NotFound),
+            }
         }
     }
 
@@ -286,6 +375,12 @@ impl Approvals {
                     pending_approval.entry_index,
                     entry,
                 ));
+            }
+
+            // Update DB status to cancelled
+            if let Err(e) = PendingApprovalRecord::respond(&self.pool, id, "cancelled", None).await
+            {
+                tracing::warn!("Failed to cancel pending approval in DB: {}", e);
             }
 
             tracing::debug!("Cancelled approval '{}'", id);

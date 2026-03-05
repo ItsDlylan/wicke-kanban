@@ -116,7 +116,7 @@ impl Deployment for LocalDeployment {
             });
         }
 
-        let approvals = Approvals::new(msg_stores.clone());
+        let approvals = Approvals::new(msg_stores.clone(), db.pool.clone());
         let queued_message_service = QueuedMessageService::new();
 
         // We need to make analytics accessible to the ContainerService

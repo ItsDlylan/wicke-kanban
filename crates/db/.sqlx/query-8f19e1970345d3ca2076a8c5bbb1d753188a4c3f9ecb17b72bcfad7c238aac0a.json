@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                   pa.id as \"id!\",\n                   pa.execution_process_id as \"execution_process_id!: Uuid\",\n                   pa.task_id as \"task_id!: Uuid\",\n                   pa.tool_name as \"tool_name!\",\n                   pa.tool_input as \"tool_input!\",\n                   pa.tool_call_id,\n                   pa.status as \"status!\",\n                   pa.response_input,\n                   pa.created_at as \"created_at!\",\n                   pa.timeout_at as \"timeout_at!\",\n                   pa.responded_at\n               FROM pending_approvals pa\n               JOIN execution_processes ep ON ep.id = pa.execution_process_id\n               WHERE pa.status = 'pending'\n                 AND ep.status IN ('failed', 'killed', 'completed')",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "execution_process_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "tool_name!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_input!",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_call_id",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "response_input",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "timeout_at!",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "responded_at",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8f19e1970345d3ca2076a8c5bbb1d753188a4c3f9ecb17b72bcfad7c238aac0a"
+}

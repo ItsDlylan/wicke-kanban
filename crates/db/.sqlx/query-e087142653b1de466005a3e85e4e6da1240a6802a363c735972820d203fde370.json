@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                   id as \"id!\",\n                   execution_process_id as \"execution_process_id!: Uuid\",\n                   task_id as \"task_id!: Uuid\",\n                   tool_name as \"tool_name!\",\n                   tool_input as \"tool_input!\",\n                   tool_call_id,\n                   status as \"status!\",\n                   response_input,\n                   created_at as \"created_at!\",\n                   timeout_at as \"timeout_at!\",\n                   responded_at\n               FROM pending_approvals\n               WHERE task_id = $1 AND status = 'pending'\n               ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "execution_process_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "task_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "tool_name!",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_input!",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool_call_id",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "response_input",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "timeout_at!",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "responded_at",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e087142653b1de466005a3e85e4e6da1240a6802a363c735972820d203fde370"
+}

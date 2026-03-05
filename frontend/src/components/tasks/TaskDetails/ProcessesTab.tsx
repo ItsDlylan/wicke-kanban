@@ -254,6 +254,11 @@ function ProcessesTab({ sessionId }: ProcessesTabProps) {
                       )}
                     </div>
                   </div>
+                  {process.status === 'failed' && process.error_summary && (
+                    <p className="mt-2 text-sm text-destructive">
+                      {process.error_summary}
+                    </p>
+                  )}
                   <div className="mt-3 text-xs text-muted-foreground">
                     <div className="flex justify-between">
                       <span>

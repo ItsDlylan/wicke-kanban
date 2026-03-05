@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE pending_approvals\n               SET status = 'timed_out', responded_at = datetime('now', 'subsec')\n               WHERE status = 'pending' AND timeout_at < datetime('now', 'subsec')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "c98a47d4d5c4869519239554fb8e6a97deb3854692c95c5471b08c6fdf633d6c"
+}

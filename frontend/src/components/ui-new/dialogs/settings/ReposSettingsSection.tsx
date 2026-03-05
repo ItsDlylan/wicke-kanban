@@ -335,9 +335,7 @@ export function ReposSettingsSection({
             >
               <SettingsInput
                 value={draft.worktree_base_dir}
-                onChange={(value) =>
-                  updateDraft({ worktree_base_dir: value })
-                }
+                onChange={(value) => updateDraft({ worktree_base_dir: value })}
                 placeholder={t(
                   'settings.repos.general.worktreeBaseDir.placeholder'
                 )}

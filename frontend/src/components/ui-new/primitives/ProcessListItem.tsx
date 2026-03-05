@@ -16,6 +16,7 @@ interface ProcessListItemProps {
   runReason: ExecutionProcessRunReason;
   status: ExecutionProcessStatus;
   startedAt: string;
+  errorSummary?: string | null;
   selected?: boolean;
   onClick?: () => void;
   className?: string;
@@ -27,6 +28,7 @@ const RUN_REASON_LABELS: Record<ExecutionProcessRunReason, string> = {
   cleanupscript: 'Cleanup Script',
   archivescript: 'Archive Script',
   devserver: 'Dev Server',
+  autoplan: 'Auto Plan',
 };
 
 const RUN_REASON_ICONS: Record<ExecutionProcessRunReason, typeof TerminalIcon> =
@@ -36,6 +38,7 @@ const RUN_REASON_ICONS: Record<ExecutionProcessRunReason, typeof TerminalIcon> =
     cleanupscript: GearIcon,
     archivescript: GearIcon,
     devserver: GlobeIcon,
+    autoplan: CodeIcon,
   };
 
 const STATUS_COLORS: Record<ExecutionProcessStatus, string> = {
@@ -49,6 +52,7 @@ export function ProcessListItem({
   runReason,
   status,
   startedAt,
+  errorSummary,
   selected,
   onClick,
   className,
@@ -77,7 +81,7 @@ export function ProcessListItem({
       ) : (
         <span
           className={cn('size-dot rounded-full flex-shrink-0', statusColor)}
-          title={status}
+          title={status === 'failed' && errorSummary ? errorSummary : status}
         />
       )}
       <span
@@ -87,6 +91,11 @@ export function ProcessListItem({
         )}
       >
         {label}
+        {status === 'failed' && errorSummary && (
+          <span className="text-xs text-destructive ml-1" title={errorSummary}>
+            — {errorSummary}
+          </span>
+        )}
       </span>
       <span className="text-xs text-low flex-shrink-0">
         {formatRelativeTime(startedAt)}

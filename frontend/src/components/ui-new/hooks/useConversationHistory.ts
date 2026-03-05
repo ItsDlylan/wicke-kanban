@@ -104,7 +104,8 @@ export const useConversationHistory = ({
         ep.run_reason === 'setupscript' ||
         ep.run_reason === 'cleanupscript' ||
         ep.run_reason === 'archivescript' ||
-        ep.run_reason === 'codingagent'
+        ep.run_reason === 'codingagent' ||
+        ep.run_reason === 'autoplan'
     );
   }, [executionProcessesRaw]);
 

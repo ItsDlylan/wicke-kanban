@@ -11,6 +11,12 @@
           "plan": true
         }
       },
+      "AUTO_PLAN": {
+        "CLAUDE_CODE": {
+          "plan": true,
+          "stop_after_plan": true
+        }
+      },
       "OPUS": {
         "CLAUDE_CODE": {
           "model": "opus"

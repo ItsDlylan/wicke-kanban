@@ -25,6 +25,7 @@ import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
 import { statusLabels } from '@/utils/statusLabels';
 import { PlanningSessionsPanel } from './PlanningSessionsPanel';
+import { PendingApprovalQuestion } from './PendingApprovalQuestion';
 
 interface TaskPanelProps {
   task: TaskWithAttemptStatus | null;
@@ -415,9 +416,12 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
           {activeTab === 'plan' && (
             <div className="overflow-y-auto flex-1 min-h-0">
               {planStatus === 'generating' && (
-                <div className="py-8 flex flex-col items-center gap-3 text-muted-foreground">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Generating plan...</p>
+                <div className="space-y-4">
+                  <div className="py-8 flex flex-col items-center gap-3 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <p>Generating plan...</p>
+                  </div>
+                  <PendingApprovalQuestion taskId={task.id} />
                 </div>
               )}
 
