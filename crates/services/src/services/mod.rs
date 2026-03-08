@@ -12,6 +12,7 @@ pub mod file_search;
 pub mod filesystem;
 pub mod filesystem_watcher;
 pub mod git_host;
+pub mod herd;
 pub mod image;
 pub mod notification;
 pub mod oauth_credentials;

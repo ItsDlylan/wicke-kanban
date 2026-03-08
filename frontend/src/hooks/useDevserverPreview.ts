@@ -16,6 +16,8 @@ interface UseDevserverPreviewOptions {
     port?: number;
     scheme: 'http' | 'https';
   };
+  /** Herd URL from workspace dev_url field — short-circuits to ready state */
+  herdUrl?: string | null;
 }
 
 export function useDevserverPreview(
@@ -25,7 +27,7 @@ export function useDevserverPreview(
     projectHasDevScript: false,
   }
 ): DevserverPreviewState {
-  const { projectHasDevScript = false, lastKnownUrl } = options;
+  const { projectHasDevScript = false, lastKnownUrl, herdUrl } = options;
   const {
     executionProcessesVisible: executionProcesses,
     error: processesError,
@@ -52,6 +54,21 @@ export function useDevserverPreview(
   }, [executionProcesses]);
 
   useEffect(() => {
+    // Short-circuit: if a Herd URL is set on the workspace, go directly to ready
+    if (herdUrl) {
+      setState((prev) => {
+        if (
+          prev.status === 'ready' &&
+          prev.url === herdUrl &&
+          prev.scheme === 'https'
+        ) {
+          return prev;
+        }
+        return { status: 'ready', url: herdUrl, scheme: 'https' };
+      });
+      return;
+    }
+
     if (processesError) {
       setState((prev) => ({ ...prev, status: 'error' }));
       return;
@@ -94,7 +111,13 @@ export function useDevserverPreview(
       url: undefined,
       port: undefined,
     }));
-  }, [processesError, selectedProcess, lastKnownUrl, projectHasDevScript]);
+  }, [
+    processesError,
+    selectedProcess,
+    lastKnownUrl,
+    projectHasDevScript,
+    herdUrl,
+  ]);
 
   useEffect(() => {
     setState({

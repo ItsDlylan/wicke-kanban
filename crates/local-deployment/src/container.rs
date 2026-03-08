@@ -208,6 +208,31 @@ impl LocalContainerService {
             return;
         }
 
+        // Unlink any Herd site associated with this workspace before removing files
+        if let Some(dev_url) = &workspace.dev_url {
+            if let Some(site_name) = dev_url
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .strip_suffix(".test")
+            {
+                tracing::info!(
+                    "Unlinking Herd site '{}' for workspace {}",
+                    site_name,
+                    workspace.id
+                );
+                let site = site_name.to_string();
+                // Best-effort: unsecure then unlink
+                let _ = tokio::process::Command::new("herd")
+                    .args(["unsecure", &site])
+                    .output()
+                    .await;
+                let _ = tokio::process::Command::new("herd")
+                    .args(["unlink", &site])
+                    .output()
+                    .await;
+            }
+        }
+
         let repositories = WorkspaceRepo::find_repos_for_workspace(&db.pool, workspace.id)
             .await
             .unwrap_or_default();
@@ -868,6 +893,41 @@ impl LocalContainerService {
                     ctx.execution_process.status,
                     ExecutionProcessStatus::Running
                 );
+
+                // After a setup script completes successfully, detect Herd URL
+                if success
+                    && matches!(
+                        ctx.execution_process.run_reason,
+                        ExecutionProcessRunReason::SetupScript
+                    )
+                {
+                    if let Some(container_ref) = ctx.workspace.container_ref.as_deref() {
+                        let container_path = std::path::PathBuf::from(container_ref);
+                        let pool = db.pool.clone();
+                        let workspace_id = ctx.workspace.id;
+                        // Spawn detection as a background task so it doesn't block the chain
+                        tokio::spawn(async move {
+                            if let Some(url) =
+                                services::services::herd::detect_herd_url(&container_path).await
+                            {
+                                tracing::info!(
+                                    "Detected Herd URL {} for workspace {}",
+                                    url,
+                                    workspace_id
+                                );
+                                if let Err(e) =
+                                    Workspace::update_dev_url(&pool, workspace_id, &url).await
+                                {
+                                    tracing::warn!(
+                                        "Failed to store Herd URL for workspace {}: {}",
+                                        workspace_id,
+                                        e
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
 
                 if success || cleanup_done {
                     // Commit changes (if any) and get feedback about whether changes were made
@@ -2221,6 +2281,7 @@ mod tests {
             archived: false,
             pinned: false,
             name: None,
+            dev_url: None,
         };
 
         // Verify the safety check rejects this path

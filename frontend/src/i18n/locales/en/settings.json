@@ -460,6 +460,16 @@
       "scripts": {
         "title": "Scripts & Configuration",
         "description": "Configure dev server, setup, cleanup, and copy files for this repository. These scripts run whenever the repository is used in any workspace.",
+        "preset": {
+          "label": "Quick Setup",
+          "description": "Auto-fill scripts for common project types.",
+          "placeholder": "Select a preset...",
+          "none": "None",
+          "laravelHerd": "Laravel + Herd",
+          "laravelHerdDescription": "Sets up database, .env, Herd link, Composer/npm, and migrations for each worktree.",
+          "applied": "Preset applied. Review the scripts below and save.",
+          "confirmOverwrite": "This will overwrite your current script settings. Continue?"
+        },
         "setup": {
           "label": "Setup Script",
           "helper": "This script runs from within the worktree after it's created and before the coding agent starts. Use it for setup tasks like installing dependencies or preparing the environment.",

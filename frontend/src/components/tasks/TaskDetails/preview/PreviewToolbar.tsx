@@ -21,6 +21,7 @@ interface PreviewToolbarProps {
   customUrl: string | null;
   detectedUrl: string | undefined;
   onUrlChange: (url: string | null) => void;
+  isHerdMode?: boolean;
 }
 
 export function PreviewToolbar({
@@ -33,6 +34,7 @@ export function PreviewToolbar({
   customUrl,
   detectedUrl,
   onUrlChange,
+  isHerdMode,
 }: PreviewToolbarProps) {
   const { t } = useTranslation('tasks');
   const [isEditing, setIsEditing] = useState(false);
@@ -179,6 +181,11 @@ export function PreviewToolbar({
           />
         ) : (
           <>
+            {isHerdMode && (
+              <span className="inline-flex items-center rounded-md bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-500/10 dark:text-green-400 dark:ring-green-500/20 shrink-0">
+                Herd
+              </span>
+            )}
             <button
               onClick={handleStartEdit}
               className="text-sm text-muted-foreground font-mono truncate hover:text-foreground transition-colors cursor-text text-left"

@@ -197,6 +197,69 @@ impl ProjectService {
             }
         }
 
+        // Auto-detect setup and cleanup scripts if not already configured
+        let mut needs_update = false;
+        let mut auto_update = db::models::repo::UpdateRepo {
+            display_name: None,
+            setup_script: None,
+            cleanup_script: None,
+            archive_script: None,
+            copy_files: None,
+            parallel_setup_script: None,
+            dev_server_script: None,
+            default_target_branch: None,
+            default_working_dir: None,
+            worktree_base_dir: None,
+        };
+
+        if repository.setup_script.is_none() {
+            let candidates = ["bin/setup", ".wicke/setup.sh"];
+            for candidate in &candidates {
+                if repository.path.join(candidate).exists() {
+                    tracing::info!(
+                        "Auto-detected setup script '{}' for repo {}",
+                        candidate,
+                        repository.id
+                    );
+                    auto_update.setup_script = Some(Some(candidate.to_string()));
+                    needs_update = true;
+                    break;
+                }
+            }
+        }
+
+        if repository.cleanup_script.is_none() {
+            let candidates = ["bin/cleanup", ".wicke/cleanup.sh"];
+            for candidate in &candidates {
+                if repository.path.join(candidate).exists() {
+                    tracing::info!(
+                        "Auto-detected cleanup script '{}' for repo {}",
+                        candidate,
+                        repository.id
+                    );
+                    auto_update.cleanup_script = Some(Some(candidate.to_string()));
+                    needs_update = true;
+                    break;
+                }
+            }
+        }
+
+        let repository = if needs_update {
+            match Repo::update(pool, repository.id, &auto_update).await {
+                Ok(updated) => updated,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to auto-set scripts for repo {}: {}",
+                        repository.id,
+                        e
+                    );
+                    repository
+                }
+            }
+        } else {
+            repository
+        };
+
         tracing::info!(
             "Added repository {} to project {} (path: {})",
             repository.id,

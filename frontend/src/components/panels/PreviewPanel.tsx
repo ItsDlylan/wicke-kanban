@@ -18,6 +18,9 @@ import { NoServerContent } from '@/components/tasks/TaskDetails/preview/NoServer
 import { ReadyContent } from '@/components/tasks/TaskDetails/preview/ReadyContent';
 import { ScriptFixerDialog } from '@/components/dialogs/scripts/ScriptFixerDialog';
 import { useAttemptRepo } from '@/hooks/useAttemptRepo';
+import { useAttempt, attemptKeys } from '@/hooks/useAttempt';
+import { attemptsApi } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function PreviewPanel() {
   const [iframeError, setIframeError] = useState(false);
@@ -38,6 +41,48 @@ export function PreviewPanel() {
   const { data: projectHasDevScript = false } =
     useHasDevServerScript(projectId);
   const { repos } = useAttemptRepo(attemptId);
+  const { data: workspace } = useAttempt(attemptId);
+  const queryClient = useQueryClient();
+  const [detectedHerdUrl, setDetectedHerdUrl] = useState<string | null>(null);
+  const [herdDetected, setHerdDetected] = useState(false);
+
+  // Auto-detect Herd URL when workspace exists but has no dev_url and no dev server script
+  useEffect(() => {
+    if (
+      !attemptId ||
+      !workspace ||
+      workspace.dev_url ||
+      herdDetected ||
+      projectHasDevScript
+    )
+      return;
+
+    // Only attempt detection if the workspace has a container (setup has run)
+    if (!workspace.container_ref) return;
+
+    let cancelled = false;
+    attemptsApi.detectHerdUrl(attemptId).then((url) => {
+      if (cancelled) return;
+      setHerdDetected(true);
+      if (url) {
+        setDetectedHerdUrl(url);
+        queryClient.invalidateQueries({
+          queryKey: attemptKeys.byId(attemptId),
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    attemptId,
+    workspace?.dev_url,
+    workspace?.container_ref,
+    herdDetected,
+    projectHasDevScript,
+    queryClient,
+  ]);
 
   const {
     start: startDevServer,
@@ -56,10 +101,12 @@ export function PreviewPanel() {
     projectHasDevScript,
     projectId: projectId!,
     lastKnownUrl,
+    herdUrl: workspace?.dev_url ?? detectedHerdUrl,
   });
 
-  // Compute effective URL - custom URL overrides auto-detected
-  const effectiveUrl = customUrl ?? previewState.url;
+  // Compute effective URL - custom URL overrides Herd URL overrides auto-detected
+  const herdUrl = workspace?.dev_url ?? detectedHerdUrl;
+  const effectiveUrl = customUrl ?? herdUrl ?? previewState.url;
 
   const handleRefresh = () => {
     setIframeError(false);
@@ -141,9 +188,11 @@ export function PreviewPanel() {
     hasRunningDevServer,
   ]);
 
+  const isHerdMode = Boolean(herdUrl);
   const isPreviewReady =
     (previewState.status === 'ready' && Boolean(previewState.url)) ||
-    (customUrl !== null && hasRunningDevServer);
+    (customUrl !== null && hasRunningDevServer) ||
+    isHerdMode;
   const isPreviewReadyWithoutError = isPreviewReady && !iframeError;
   const mode = iframeError
     ? 'error'
@@ -214,6 +263,7 @@ export function PreviewPanel() {
               customUrl={customUrl}
               detectedUrl={lastKnownUrl?.url}
               onUrlChange={setCustomUrl}
+              isHerdMode={isHerdMode}
             />
             <ReadyContent
               url={effectiveUrl}

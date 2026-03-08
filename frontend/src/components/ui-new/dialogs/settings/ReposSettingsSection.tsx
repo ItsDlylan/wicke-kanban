@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { isEqual } from 'lodash';
-import { GitBranchIcon, SpinnerIcon } from '@phosphor-icons/react';
+import {
+  GitBranchIcon,
+  SpinnerIcon,
+  LightningIcon,
+} from '@phosphor-icons/react';
 import { useRepoBranches } from '@/hooks/useRepoBranches';
 import { useScriptPlaceholders } from '@/hooks/useScriptPlaceholders';
 import { repoApi } from '@/lib/api';
+import { REPO_PRESETS } from '@/lib/repoPresets';
 import type { Repo, UpdateRepo } from 'shared/types';
 import { SearchableDropdownContainer } from '../../containers/SearchableDropdownContainer';
 import {
@@ -101,6 +106,7 @@ export function ReposSettingsSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [presetApplied, setPresetApplied] = useState(false);
 
   // Get OS-appropriate script placeholders
   const placeholders = useScriptPlaceholders();
@@ -202,6 +208,35 @@ export function ReposSettingsSection({
       if (!prev) return prev;
       return { ...prev, ...updates };
     });
+  };
+
+  const handleApplyPreset = (presetId: string) => {
+    const preset = REPO_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    const hasExistingScripts =
+      draft?.setup_script?.trim() ||
+      draft?.cleanup_script?.trim() ||
+      draft?.archive_script?.trim() ||
+      draft?.copy_files?.trim() ||
+      draft?.dev_server_script?.trim();
+
+    if (hasExistingScripts) {
+      const confirmed = window.confirm(
+        t('settings.repos.scripts.preset.confirmOverwrite')
+      );
+      if (!confirmed) return;
+    }
+
+    updateDraft({
+      setup_script: preset.setup_script,
+      cleanup_script: preset.cleanup_script,
+      archive_script: preset.archive_script,
+      copy_files: preset.copy_files,
+      dev_server_script: preset.dev_server_script,
+    });
+    setPresetApplied(true);
+    setTimeout(() => setPresetApplied(false), 3000);
   };
 
   if (reposLoading) {
@@ -396,6 +431,49 @@ export function ReposSettingsSection({
             title={t('settings.repos.scripts.title')}
             description={t('settings.repos.scripts.description')}
           >
+            <SettingsField
+              label={t('settings.repos.scripts.preset.label')}
+              description={t('settings.repos.scripts.preset.description')}
+            >
+              <div className="flex flex-col gap-base">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <DropdownMenuTriggerButton
+                      icon={LightningIcon}
+                      label={t('settings.repos.scripts.preset.placeholder')}
+                      className="w-full justify-between"
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                    {REPO_PRESETS.map((preset) => (
+                      <DropdownMenuItem
+                        key={preset.id}
+                        onClick={() => handleApplyPreset(preset.id)}
+                      >
+                        <div>
+                          <div className="font-medium">
+                            {t(
+                              `settings.repos.scripts.preset.${preset.labelKey}`
+                            )}
+                          </div>
+                          <div className="text-xs text-low">
+                            {t(
+                              `settings.repos.scripts.preset.${preset.descriptionKey}`
+                            )}
+                          </div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {presetApplied && (
+                  <div className="text-sm text-success font-medium">
+                    {t('settings.repos.scripts.preset.applied')}
+                  </div>
+                )}
+              </div>
+            </SettingsField>
+
             <SettingsField
               label={t('settings.repos.scripts.devServer.label')}
               description={t('settings.repos.scripts.devServer.helper')}

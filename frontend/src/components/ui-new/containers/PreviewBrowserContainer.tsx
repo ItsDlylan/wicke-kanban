@@ -21,6 +21,9 @@ import { useLogStream } from '@/hooks/useLogStream';
 import { useUiPreferencesStore } from '@/stores/useUiPreferencesStore';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { ScriptFixerDialog } from '@/components/dialogs/scripts/ScriptFixerDialog';
+import { attemptsApi } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { attemptKeys } from '@/hooks/useAttempt';
 
 const MIN_RESPONSIVE_WIDTH = 320;
 const MIN_RESPONSIVE_HEIGHT = 480;
@@ -73,8 +76,42 @@ export function PreviewBrowserContainer({
     setResponsiveDimensions,
   } = usePreviewSettings(workspaceId);
 
-  // Use override URL if set, otherwise fall back to auto-detected
-  const effectiveUrl = hasOverride ? overrideUrl : urlInfo?.url;
+  const queryClient = useQueryClient();
+  const { workspace } = useWorkspaceContext();
+  const [detectedHerdUrl, setDetectedHerdUrl] = useState<string | null>(null);
+  const herdUrl = workspace?.dev_url ?? detectedHerdUrl;
+  const [herdDetected, setHerdDetected] = useState(false);
+
+  // Auto-detect Herd URL when workspace exists but has no dev_url
+  useEffect(() => {
+    if (!attemptId || !workspace || workspace.dev_url || herdDetected) return;
+    if (!workspace.container_ref) return;
+
+    let cancelled = false;
+    attemptsApi.detectHerdUrl(attemptId).then((url) => {
+      if (cancelled) return;
+      setHerdDetected(true);
+      if (url) {
+        setDetectedHerdUrl(url);
+        queryClient.invalidateQueries({
+          queryKey: attemptKeys.byId(attemptId),
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    attemptId,
+    workspace?.dev_url,
+    workspace?.container_ref,
+    herdDetected,
+    queryClient,
+  ]);
+
+  // Use override URL if set, then Herd URL, then fall back to auto-detected
+  const effectiveUrl = hasOverride ? overrideUrl : (herdUrl ?? urlInfo?.url);
 
   // Local state for URL input to prevent updates from disrupting typing
   const urlInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +159,8 @@ export function PreviewBrowserContainer({
     // If user has triggered immediate load (refresh/submit), show immediately after delay
     // OR if no override (normal flow), show after delay once effectiveUrl is set
     // OR if we have both override and auto-detected URL (server is ready), show after delay
-    const shouldShow = immediateLoad || !hasOverride || urlInfo?.url;
+    // OR if using a Herd URL (no dev server needed), show after delay
+    const shouldShow = immediateLoad || !hasOverride || urlInfo?.url || herdUrl;
 
     if (!shouldShow) {
       setShowIframe(false);
@@ -138,6 +176,7 @@ export function PreviewBrowserContainer({
     immediateLoad,
     hasOverride,
     urlInfo?.url,
+    herdUrl,
   ]);
 
   // Responsive resize state - use refs for values that shouldn't trigger re-renders
@@ -398,7 +437,7 @@ export function PreviewBrowserContainer({
       onStop={handleStop}
       isStarting={isStarting}
       isStopping={isStopping}
-      isServerRunning={runningDevServers.length > 0}
+      isServerRunning={runningDevServers.length > 0 || Boolean(herdUrl)}
       showIframe={showIframe}
       allowManualUrl={allowManualUrl}
       screenSize={screenSize}

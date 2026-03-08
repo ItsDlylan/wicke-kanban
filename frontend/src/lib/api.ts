@@ -986,6 +986,16 @@ export const attemptsApi = {
     );
   },
 
+  detectHerdUrl: async (attemptId: string): Promise<string | null> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/detect-herd-url`,
+      {
+        method: 'POST',
+      }
+    );
+    return handleApiResponse<string | null>(response);
+  },
+
   getPrComments: async (
     attemptId: string,
     repoId: string

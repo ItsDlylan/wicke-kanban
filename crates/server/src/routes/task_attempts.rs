@@ -43,7 +43,7 @@ use git::{ConflictOp, GitCliError, GitService, GitServiceError};
 use git2::BranchType;
 use serde::{Deserialize, Serialize};
 use services::services::{
-    container::ContainerService, ralph_loop::find_shared_ralph_workspace,
+    container::ContainerService, herd, ralph_loop::find_shared_ralph_workspace,
     workspace_manager::WorkspaceManager,
 };
 use sqlx::Error as SqlxError;
@@ -1938,6 +1938,54 @@ pub async fn mark_seen(
     Ok(ResponseJson(ApiResponse::success(())))
 }
 
+/// Detect a Herd `.test` URL for this workspace and store it as `dev_url`.
+///
+/// Looks at the workspace's container path and checks `herd links` for a
+/// matching linked site. Returns the detected URL or null if none found.
+pub async fn detect_herd_url(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Option<String>>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // If we already have a dev_url, just return it
+    if let Some(ref url) = workspace.dev_url {
+        return Ok(ResponseJson(ApiResponse::success(Some(url.clone()))));
+    }
+
+    let container_ref = match workspace.container_ref {
+        Some(ref cr) => cr.clone(),
+        None => {
+            // Try to ensure container exists first
+            let cr = deployment
+                .container()
+                .ensure_container_exists(&workspace)
+                .await?;
+            cr
+        }
+    };
+
+    let workspace_path = std::path::Path::new(&container_ref);
+
+    // Try each repo subdirectory within the workspace container
+    let repos = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id).await?;
+    for repo in &repos {
+        let worktree_path = workspace_path.join(&repo.name);
+        if let Some(url) = herd::detect_herd_url(&worktree_path).await {
+            Workspace::update_dev_url(pool, workspace.id, &url).await?;
+            return Ok(ResponseJson(ApiResponse::success(Some(url))));
+        }
+    }
+
+    // Also try the container path itself
+    if let Some(url) = herd::detect_herd_url(workspace_path).await {
+        Workspace::update_dev_url(pool, workspace.id, &url).await?;
+        return Ok(ResponseJson(ApiResponse::success(Some(url))));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(None)))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_attempt_id_router = Router::new().merge(
         Router::new()
@@ -1973,6 +2021,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
             .route("/repos", get(get_task_attempt_repos))
             .route("/first-message", get(get_first_user_message))
             .route("/mark-seen", put(mark_seen))
+            .route("/detect-herd-url", post(detect_herd_url))
             .layer(from_fn_with_state(
                 deployment.clone(),
                 load_workspace_middleware,

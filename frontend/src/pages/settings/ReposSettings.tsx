@@ -26,6 +26,7 @@ import { useScriptPlaceholders } from '@/hooks/useScriptPlaceholders';
 import { AutoExpandingTextarea } from '@/components/ui/auto-expanding-textarea';
 import { MultiFileSearchTextarea } from '@/components/ui/multi-file-search-textarea';
 import { repoApi } from '@/lib/api';
+import { REPO_PRESETS } from '@/lib/repoPresets';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Repo, UpdateRepo } from 'shared/types';
 
@@ -76,6 +77,8 @@ export function ReposSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const [presetApplied, setPresetApplied] = useState(false);
 
   // Get OS-appropriate script placeholders
   const placeholders = useScriptPlaceholders();
@@ -214,6 +217,33 @@ export function ReposSettings() {
       if (!prev) return prev;
       return { ...prev, ...updates };
     });
+  };
+
+  const handleApplyPreset = (presetId: string) => {
+    const preset = REPO_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    const hasExistingScripts =
+      draft?.setup_script?.trim() ||
+      draft?.cleanup_script?.trim() ||
+      draft?.copy_files?.trim() ||
+      draft?.dev_server_script?.trim();
+
+    if (hasExistingScripts) {
+      const confirmed = window.confirm(
+        t('settings.repos.scripts.preset.confirmOverwrite')
+      );
+      if (!confirmed) return;
+    }
+
+    updateDraft({
+      setup_script: preset.setup_script,
+      cleanup_script: preset.cleanup_script,
+      copy_files: preset.copy_files,
+      dev_server_script: preset.dev_server_script,
+    });
+    setPresetApplied(true);
+    setTimeout(() => setPresetApplied(false), 3000);
   };
 
   if (reposLoading) {
@@ -360,6 +390,34 @@ export function ReposSettings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t('settings.repos.scripts.preset.label')}</Label>
+                <Select onValueChange={handleApplyPreset}>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={t(
+                        'settings.repos.scripts.preset.placeholder'
+                      )}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPO_PRESETS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {t(`settings.repos.scripts.preset.${preset.labelKey}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.repos.scripts.preset.description')}
+                </p>
+                {presetApplied && (
+                  <p className="text-sm text-green-600 font-medium">
+                    {t('settings.repos.scripts.preset.applied')}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="dev-server-script">
                   {t('settings.repos.scripts.devServer.label')}
