@@ -9,6 +9,9 @@ use tokio::{
 };
 use ts_rs::TS;
 
+/// Shared cache file written by Claude Code's statusline script every ~30s.
+const USAGE_CACHE_FILE: &str = ".claude/usage.json";
+
 #[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[ts(export)]
 pub struct ClaudeUsageData {
@@ -31,12 +34,7 @@ impl Default for ClaudeUsageData {
 
 pub type UsageCache = Arc<RwLock<Option<ClaudeUsageData>>>;
 
-pub struct UsagePoller {
-    cache: UsageCache,
-    client: reqwest::Client,
-}
-
-/// Response shape from the Anthropic usage API.
+/// Response shape from the Anthropic usage API (cached in ~/.claude/usage.json).
 #[derive(Deserialize)]
 struct UsageApiResponse {
     five_hour: Option<UsageWindow>,
@@ -49,12 +47,13 @@ struct UsageWindow {
     resets_at: Option<String>,
 }
 
+pub struct UsagePoller {
+    cache: UsageCache,
+}
+
 impl UsagePoller {
     pub fn new(cache: UsageCache) -> Self {
-        Self {
-            cache,
-            client: reqwest::Client::new(),
-        }
+        Self { cache }
     }
 
     pub fn spawn(cache: UsageCache) -> JoinHandle<()> {
@@ -65,7 +64,9 @@ impl UsagePoller {
     }
 
     async fn start(&self) {
-        let mut interval = interval(Duration::from_secs(300));
+        // Read the cache file every 10s — it's just a local file read, very cheap.
+        // The file itself is refreshed every ~30s by Claude Code's statusline script.
+        let mut interval = interval(Duration::from_secs(10));
 
         loop {
             interval.tick().await;
@@ -73,56 +74,22 @@ impl UsagePoller {
         }
     }
 
-    /// Retrieve the Claude OAuth token from the macOS Keychain.
-    fn get_oauth_token() -> Option<String> {
-        let output = std::process::Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ])
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let raw = String::from_utf8(output.stdout).ok()?;
-        let json: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
-        json.get("claudeAiOauth")?
-            .get("accessToken")?
-            .as_str()
-            .map(|s| s.to_string())
+    /// Read and parse the shared usage cache file.
+    /// Returns Ok(Some) for valid usage, Ok(None) if file exists but has an error/unrecognized
+    /// response, and Err if the file doesn't exist or can't be read.
+    fn read_cache_file() -> Result<Option<UsageApiResponse>, ()> {
+        let home = std::env::var_os("HOME").ok_or(())?;
+        let path = std::path::Path::new(&home).join(USAGE_CACHE_FILE);
+        let contents = std::fs::read_to_string(&path).map_err(|_| ())?;
+        // File exists — try to parse as usage response
+        Ok(serde_json::from_str(&contents).ok())
     }
 
-    /// Fetch usage data from the Anthropic API and transform it for the frontend.
-    async fn fetch_usage(&self, token: &str) -> Result<serde_json::Value, String> {
-        let resp = self
-            .client
-            .get("https://api.anthropic.com/api/oauth/usage")
-            .bearer_auth(token)
-            .header("anthropic-beta", "oauth-2025-04-20")
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {e}"))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(format!("API returned {status}: {body}"));
-        }
-
-        let api: UsageApiResponse = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {e}"))?;
-
-        // Transform into the shape the frontend expects: { usage_windows: { "5h": ..., "7d": ... } }
+    /// Transform raw API response into the shape the frontend expects.
+    fn transform_usage(api: &UsageApiResponse) -> serde_json::Value {
         let mut windows = serde_json::Map::new();
 
-        if let Some(w) = api.five_hour {
+        if let Some(ref w) = api.five_hour {
             let mut entry = serde_json::Map::new();
             entry.insert("percentage".into(), serde_json::json!(w.utilization));
             if let Some(ref r) = w.resets_at {
@@ -131,7 +98,7 @@ impl UsagePoller {
             windows.insert("5h".into(), serde_json::Value::Object(entry));
         }
 
-        if let Some(w) = api.seven_day {
+        if let Some(ref w) = api.seven_day {
             let mut entry = serde_json::Map::new();
             entry.insert("percentage".into(), serde_json::json!(w.utilization));
             if let Some(ref r) = w.resets_at {
@@ -140,37 +107,32 @@ impl UsagePoller {
             windows.insert("7d".into(), serde_json::Value::Object(entry));
         }
 
-        Ok(serde_json::json!({ "usage_windows": windows }))
+        serde_json::json!({ "usage_windows": windows })
     }
 
     async fn poll(&self) {
-        tracing::debug!("UsagePoller: polling for usage data");
-
-        let token = match Self::get_oauth_token() {
-            Some(t) => t,
-            None => {
-                tracing::debug!("UsagePoller: no OAuth token found, skipping");
-                let mut guard = self.cache.write().await;
-                *guard = Some(ClaudeUsageData::default());
-                return;
-            }
-        };
-
-        let data = match self.fetch_usage(&token).await {
-            Ok(usage) => ClaudeUsageData {
+        let data = match Self::read_cache_file() {
+            Ok(Some(api)) => ClaudeUsageData {
                 configured: true,
-                usage: Some(usage),
+                usage: Some(Self::transform_usage(&api)),
                 last_updated_at: Some(Utc::now()),
                 error: None,
             },
-            Err(e) => {
-                tracing::warn!("UsagePoller: failed to fetch usage: {e}");
+            Ok(None) => {
+                // File exists but contains an error response (e.g. rate limit) —
+                // still configured, just no data right now.
+                tracing::debug!("UsagePoller: cache file exists but has no usage data");
                 ClaudeUsageData {
                     configured: true,
                     usage: None,
                     last_updated_at: Some(Utc::now()),
-                    error: Some(e),
+                    error: None,
                 }
+            }
+            Err(()) => {
+                // File doesn't exist yet — not configured
+                tracing::debug!("UsagePoller: cache file not found");
+                ClaudeUsageData::default()
             }
         };
 
