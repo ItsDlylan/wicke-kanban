@@ -327,40 +327,57 @@ pub async fn auto_prepare_for_ralph(
             existing
         }
         _ => {
-            // Generate spec sheet via Claude
+            // Generate spec sheet via Claude (with one retry on failure)
             let spec_prompt =
                 spec_generator::build_spec_generation_prompt(title, description, Some(plan_text));
-            let spec_working_path = working_dir.to_path_buf();
 
-            let spec_result = tokio::task::spawn_blocking(move || {
-                spec_generator::run_spec_generation(&spec_prompt, &spec_working_path)
-            })
-            .await;
+            let mut spec = None;
+            for attempt in 1..=2 {
+                let prompt_clone = spec_prompt.clone();
+                let path_clone = working_dir.to_path_buf();
 
-            let spec = match spec_result {
-                Ok(Ok(raw_output)) => match spec_generator::parse_spec_output(&raw_output) {
-                    Ok(spec) => spec,
-                    Err(e) => {
+                let spec_result = tokio::task::spawn_blocking(move || {
+                    spec_generator::run_spec_generation(&prompt_clone, &path_clone)
+                })
+                .await;
+
+                match spec_result {
+                    Ok(Ok(raw_output)) => match spec_generator::parse_spec_output(&raw_output) {
+                        Ok(s) => {
+                            spec = Some(s);
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to parse auto-generated spec for task {} (attempt {}/2): {}",
+                                task_id,
+                                attempt,
+                                e
+                            );
+                        }
+                    },
+                    Ok(Err(e)) => {
                         tracing::warn!(
-                            "Failed to parse auto-generated spec for task {}: {}",
+                            "Auto spec generation failed for task {} (attempt {}/2): {}",
                             task_id,
+                            attempt,
                             e
                         );
-                        return false;
                     }
-                },
-                Ok(Err(e)) => {
-                    tracing::warn!("Auto spec generation failed for task {}: {}", task_id, e);
-                    return false;
+                    Err(e) => {
+                        tracing::warn!(
+                            "Auto spec generation task panicked for task {} (attempt {}/2): {}",
+                            task_id,
+                            attempt,
+                            e
+                        );
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        "Auto spec generation task panicked for task {}: {}",
-                        task_id,
-                        e
-                    );
-                    return false;
-                }
+            }
+
+            let spec = match spec {
+                Some(s) => s,
+                None => return false,
             };
 
             // Store the spec sheet

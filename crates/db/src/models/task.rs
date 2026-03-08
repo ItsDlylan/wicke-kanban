@@ -407,6 +407,11 @@ ORDER BY t.created_at DESC"#,
     where
         E: Executor<'e, Database = Sqlite>,
     {
+        tracing::warn!(
+            task_id = %id,
+            backtrace = %std::backtrace::Backtrace::force_capture(),
+            "Task::delete called — deleting task from database"
+        );
         let result = sqlx::query!("DELETE FROM tasks WHERE id = $1", id)
             .execute(executor)
             .await?;

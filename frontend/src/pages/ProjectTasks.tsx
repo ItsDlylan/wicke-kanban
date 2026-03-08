@@ -80,6 +80,7 @@ type Task = TaskWithAttemptStatus;
 const TASK_STATUSES = [
   'backlog',
   'plangenerating',
+  'specreview',
   'ready',
   'ralph',
   'inprogress',

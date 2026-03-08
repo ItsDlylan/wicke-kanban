@@ -147,6 +147,13 @@ impl ClaudeAgentClient {
                 updated_input: input,
                 updated_permissions: None,
             })
+        } else if self.stop_after_plan && is_destructive_mcp_tool(&tool_name) {
+            // During auto-plan, deny destructive MCP tools.
+            // The agent should only be reading code and generating a plan.
+            Ok(PermissionResult::Deny {
+                message: format!("Tool '{}' is not available during auto-plan.", tool_name),
+                interrupt: Some(false),
+            })
         } else if self.stop_after_plan && tool_name == EXIT_PLAN_MODE_NAME {
             // Auto-approve ExitPlanMode during auto-plan so the cancel timer
             // (fired from log_message) doesn't race against the approval service.
@@ -256,6 +263,17 @@ impl ClaudeAgentClient {
 
         Ok(())
     }
+}
+
+/// Returns true for MCP tools that should be blocked during auto-plan.
+fn is_destructive_mcp_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "mcp__wickeban__delete_task"
+            | "mcp__wickeban__update_task"
+            | "mcp__wickeban__create_task"
+            | "mcp__wickeban__create_task_with_context"
+    )
 }
 
 /// Check whether a JSON line represents an actual ExitPlanMode tool_use call,

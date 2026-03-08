@@ -105,6 +105,13 @@ pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, S
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    if stdout.trim().is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(SpecGeneratorError::ExecutionFailed(format!(
+            "claude returned empty output (stderr: {})",
+            stderr.trim()
+        )));
+    }
     Ok(stdout)
 }
 
