@@ -242,9 +242,10 @@ impl ClaudeAgentClient {
 
         // For auto-plan: once ExitPlanMode appears as an actual tool_use in stdout,
         // the plan text is captured.  Cancel the execution so Claude doesn't
-        // continue implementing.  We check for "tool_use" to avoid matching the
-        // init message which lists "ExitPlanMode" in the available tools array.
-        if self.stop_after_plan && line.contains("tool_use") && line.contains("ExitPlanMode") {
+        // continue implementing.  We use JSON parsing to avoid false-positives on
+        // init/system messages that list ExitPlanMode in tool definitions.
+        if self.stop_after_plan && line.contains("ExitPlanMode") && is_exit_plan_mode_tool_use(line)
+        {
             let cancel = self.cancel.clone();
             tokio::spawn(async move {
                 // Brief delay so the tool result is fully flushed to the log
@@ -255,4 +256,39 @@ impl ClaudeAgentClient {
 
         Ok(())
     }
+}
+
+/// Check whether a JSON line represents an actual ExitPlanMode tool_use call,
+/// not just a mention in tool definitions or system messages.
+fn is_exit_plan_mode_tool_use(line: &str) -> bool {
+    let val = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    // Top-level tool_use event:
+    // {"type":"tool_use","name":"ExitPlanMode","input":{"plan":"..."}}
+    if val.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+        && val.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+    {
+        return true;
+    }
+
+    // Nested in assistant message format:
+    // {"message":{"content":[{"type":"tool_use","name":"ExitPlanMode",...}]}}
+    if let Some(content) = val
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        for item in content {
+            if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                && item.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+            {
+                return true;
+            }
+        }
+    }
+
+    false
 }

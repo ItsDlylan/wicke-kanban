@@ -15,6 +15,7 @@ import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { defineModal } from '@/lib/modals';
 import { BaseCodingAgent } from 'shared/types';
 import { usePlanEditSession } from '@/hooks/usePlanEditSession';
+import { usePlanWorkspace } from '@/hooks/usePlanWorkspace';
 import { ExecutionProcessesProvider } from '@/contexts/ExecutionProcessesContext';
 import { EntriesProvider } from '@/contexts/EntriesContext';
 import { ConversationList } from '@/components/ui-new/containers/ConversationListContainer';
@@ -52,6 +53,9 @@ const PlanViewDialogImpl = NiceModal.create<PlanViewDialogProps>(
       executor: BaseCodingAgent.CLAUDE_CODE,
     });
 
+    // Auto-plan streaming workspace
+    const planWorkspace = usePlanWorkspace(taskId, currentStatus);
+
     // Sync state when dialog reopens with a different task
     useEffect(() => {
       setCurrentPlan(plan);
@@ -61,7 +65,7 @@ const PlanViewDialogImpl = NiceModal.create<PlanViewDialogProps>(
       setShowSaveConfirm(false);
     }, [taskId, plan, planStatus]);
 
-    // Poll for updates while generating
+    // Poll for plan completion while generating
     useEffect(() => {
       if (currentStatus !== 'generating') return;
 
@@ -138,6 +142,46 @@ const PlanViewDialogImpl = NiceModal.create<PlanViewDialogProps>(
       modal.reject();
       modal.hide();
     }, [isEditMode, planEditSession, modal]);
+
+    // --- Generating Mode (streaming) ---
+    const isGeneratingWithStream =
+      currentStatus === 'generating' && planWorkspace?.session;
+
+    if (!isEditMode && isGeneratingWithStream) {
+      return (
+        <Dialog
+          open={modal.visible}
+          onOpenChange={(open) => !open && handleClose()}
+        >
+          <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
+            <DialogHeader className="px-6 pt-6 pb-3">
+              <DialogTitle className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating Plan
+              </DialogTitle>
+              <DialogDescription>{taskTitle}</DialogDescription>
+            </DialogHeader>
+
+            <ExecutionProcessesProvider
+              attemptId={planWorkspace.id}
+              sessionId={planWorkspace.session!.id}
+            >
+              <EntriesProvider key={planWorkspace.id}>
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <ConversationList attempt={planWorkspace} />
+                </div>
+              </EntriesProvider>
+            </ExecutionProcessesProvider>
+
+            <DialogFooter className="px-6 py-3 border-t">
+              <Button variant="outline" onClick={handleClose}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      );
+    }
 
     // --- View Mode ---
     if (!isEditMode) {
