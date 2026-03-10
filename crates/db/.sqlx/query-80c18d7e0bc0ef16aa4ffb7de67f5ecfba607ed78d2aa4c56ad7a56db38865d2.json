@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT image_id as \"image_id!: Uuid\"\n               FROM comment_images\n               WHERE comment_id = $1\n               ORDER BY sort_order",
+  "describe": {
+    "columns": [
+      {
+        "name": "image_id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "80c18d7e0bc0ef16aa4ffb7de67f5ecfba607ed78d2aa4c56ad7a56db38865d2"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO comment_images (id, comment_id, image_id, sort_order)\n                   VALUES ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "214d9d15da7876132dfcb14055654601347e38f2250dbd8e9899fa351d40965e"
+}

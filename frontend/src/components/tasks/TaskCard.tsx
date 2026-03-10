@@ -6,6 +6,7 @@ import {
   GitBranch,
   Link,
   Loader2,
+  MessageSquare,
   XCircle,
 } from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
@@ -15,6 +16,7 @@ import { useNavigateWithSearch } from '@/hooks';
 import { paths } from '@/lib/paths';
 import { attemptsApi } from '@/lib/api';
 import { TaskCardHeader } from './TaskCardHeader';
+import { TaskCommentsDialog } from '@/components/dialogs/tasks/TaskCommentsDialog';
 import { useTranslation } from 'react-i18next';
 
 type Task = TaskWithAttemptStatus;
@@ -127,12 +129,29 @@ export function TaskCard({
                 </span>
               )}
               {isHumanEpic && (
-                <span
-                  title="Human Task"
-                  className="text-[10px] font-bold text-teal-600 bg-teal-100 dark:bg-teal-900/30 dark:text-teal-400 px-1 rounded"
-                >
-                  H
-                </span>
+                <>
+                  <Button
+                    variant="icon"
+                    title="Comments"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      TaskCommentsDialog.show({
+                        taskId: task.id,
+                        taskTitle: task.title,
+                      });
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 text-teal-500" />
+                  </Button>
+                  <span
+                    title="Human Task"
+                    className="text-[10px] font-bold text-teal-600 bg-teal-100 dark:bg-teal-900/30 dark:text-teal-400 px-1 rounded"
+                  >
+                    H
+                  </span>
+                </>
               )}
               {isEpic && !isHumanEpic && (
                 <span

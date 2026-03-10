@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM comment_images WHERE comment_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8c4c46e3d7261fbb181872b9bec62632f1321fab1cf3ef28f3b6f8efd0b33bac"
+}

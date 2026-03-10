@@ -23,6 +23,7 @@ import { SpecSheetDialog } from '@/components/dialogs/tasks/SpecSheetDialog';
 import { PlanViewDialog } from '@/components/dialogs/tasks/PlanViewDialog';
 import { RalphSessionDialog } from '@/components/dialogs/tasks/RalphSessionDialog';
 import { MakeRalphReadyDialog } from '@/components/dialogs/tasks/MakeRalphReadyDialog';
+import { TaskCommentsDialog } from '@/components/dialogs/tasks/TaskCommentsDialog';
 
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceWithSession } from '@/types/attempt';
@@ -161,6 +162,15 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleComments = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    TaskCommentsDialog.show({
+      taskId: task.id,
+      taskTitle: task.title,
+    });
+  };
+
   const handleGitActions = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!attempt?.id || !task) return;
@@ -243,6 +253,9 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
           {hasTaskActions && (
             <>
               <DropdownMenuLabel>{t('actionsMenu.task')}</DropdownMenuLabel>
+              <DropdownMenuItem disabled={!task} onClick={handleComments}>
+                Comments
+              </DropdownMenuItem>
               {!task?.is_human && (
                 <>
                   <DropdownMenuItem

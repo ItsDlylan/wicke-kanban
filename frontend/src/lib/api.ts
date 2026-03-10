@@ -96,6 +96,9 @@ import {
   MigrationResponse,
   SpecSheet,
   CreateSpecSheet,
+  TaskCommentWithImages,
+  CreateTaskComment,
+  UpdateTaskComment,
   ChildTaskWithDeps,
   Diff,
   MakeRalphReadyRequest,
@@ -399,6 +402,49 @@ export const tasksApi = {
       body: JSON.stringify({ plan }),
     });
     return handleApiResponse<Task>(response);
+  },
+};
+
+export const taskCommentsApi = {
+  list: async (taskId: string): Promise<TaskCommentWithImages[]> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/comments`);
+    return handleApiResponse<TaskCommentWithImages[]>(response);
+  },
+
+  create: async (
+    taskId: string,
+    data: CreateTaskComment
+  ): Promise<TaskCommentWithImages> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<TaskCommentWithImages>(response);
+  },
+
+  update: async (
+    taskId: string,
+    commentId: string,
+    data: UpdateTaskComment
+  ): Promise<TaskCommentWithImages> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/comments/${commentId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<TaskCommentWithImages>(response);
+  },
+
+  delete: async (taskId: string, commentId: string): Promise<void> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/comments/${commentId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return handleApiResponse<void>(response);
   },
 };
 

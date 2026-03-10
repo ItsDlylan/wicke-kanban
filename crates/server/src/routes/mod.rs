@@ -25,6 +25,7 @@ pub mod sessions;
 pub mod spec_sheets;
 pub mod tags;
 pub mod task_attempts;
+pub mod task_comments;
 pub mod tasks;
 pub mod terminal;
 pub mod usage;
@@ -48,6 +49,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(search::router(&deployment))
         .merge(sessions::router(&deployment))
         .merge(spec_sheets::router())
+        .merge(task_comments::router())
         .merge(planning_sessions::router())
         .merge(terminal::router())
         .merge(usage::router())

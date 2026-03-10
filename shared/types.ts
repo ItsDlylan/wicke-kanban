@@ -58,6 +58,14 @@ export type CreateSpecSheet = { overview: string | null, requirements: string | 
 
 export type UpdateSpecSheet = { overview: string | null, requirements: string | null, acceptance_criteria: string | null, constraints: string | null, tech_notes: string | null, };
 
+export type TaskComment = { id: string, task_id: string, content: string, created_at: string, updated_at: string, };
+
+export type CreateTaskComment = { content: string, image_ids: Array<string>, };
+
+export type UpdateTaskComment = { content: string, image_ids: Array<string> | null, };
+
+export type TaskCommentWithImages = { image_ids: Array<string>, id: string, task_id: string, content: string, created_at: string, updated_at: string, };
+
 export type PlanningSession = { id: string, task_id: string, session_ref: string, notes: string | null, created_at: string, updated_at: string, };
 
 export type CreatePlanningSession = { session_ref: string, notes: string | null, };

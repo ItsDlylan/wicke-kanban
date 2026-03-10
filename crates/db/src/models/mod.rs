@@ -16,6 +16,7 @@ pub mod session;
 pub mod spec_sheet;
 pub mod tag;
 pub mod task;
+pub mod task_comment;
 pub mod task_dependency;
 pub mod workspace;
 pub mod workspace_repo;
