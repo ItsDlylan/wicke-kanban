@@ -72,7 +72,10 @@ export function useRetryProcess(
       if (err instanceof RetryDialogCancelledError) {
         return;
       }
-      console.error('Failed to send retry:', err);
+      console.error('[useRetryProcess] Failed to send retry', {
+        err,
+        sessionId,
+      });
       onError?.(err);
     },
   });

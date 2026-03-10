@@ -41,6 +41,7 @@ pub async fn create_or_update_spec(
     Path(task_id): Path<Uuid>,
     Json(payload): Json<CreateSpecSheet>,
 ) -> Result<ResponseJson<ApiResponse<SpecSheet>>, ApiError> {
+    tracing::debug!(task_id = %task_id, "Creating/updating spec sheet");
     // Verify task exists
     Task::find_by_id(&deployment.db().pool, task_id)
         .await?
@@ -48,6 +49,7 @@ pub async fn create_or_update_spec(
 
     let spec = SpecSheet::upsert(&deployment.db().pool, task_id, &payload).await?;
 
+    tracing::info!(task_id = %task_id, spec_id = %spec.id, "Spec sheet saved");
     Ok(ResponseJson(ApiResponse::success(spec)))
 }
 
@@ -84,6 +86,7 @@ pub async fn start_ralph(
     State(deployment): State<DeploymentImpl>,
     Path(task_id): Path<Uuid>,
 ) -> Result<ResponseJson<ApiResponse<String>>, ApiError> {
+    tracing::debug!(task_id = %task_id, "Starting ralph");
     let task = Task::find_by_id(&deployment.db().pool, task_id)
         .await?
         .ok_or(ApiError::Database(sqlx::Error::RowNotFound))?;
@@ -99,6 +102,7 @@ pub async fn start_ralph(
     // Advance task status to Ralph
     ralph_loop::start_ralph_loop(&deployment.db().pool, task_id).await?;
 
+    tracing::info!(task_id = %task_id, "Ralph started");
     Ok(ResponseJson(ApiResponse::success(ralph_prompt)))
 }
 
@@ -125,6 +129,7 @@ pub async fn generate_spec(
     State(deployment): State<DeploymentImpl>,
     Path(task_id): Path<Uuid>,
 ) -> Result<ResponseJson<ApiResponse<GenerateSpecResponse>>, ApiError> {
+    tracing::debug!(task_id = %task_id, "Generating spec via AI");
     let pool = &deployment.db().pool;
 
     // Load the task
@@ -157,6 +162,13 @@ pub async fn generate_spec(
     let spec = spec_generator::parse_spec_output(&raw_output)
         .map_err(|e| ApiError::BadRequest(format!("Failed to parse spec output: {e}")))?;
 
+    tracing::info!(
+        task_id = %task_id,
+        overview_len = spec.overview.len(),
+        requirements_count = spec.requirements.len(),
+        "Spec generated via AI"
+    );
+
     Ok(ResponseJson(ApiResponse::success(GenerateSpecResponse {
         overview: spec.overview,
         requirements: spec.requirements,
@@ -173,6 +185,7 @@ pub async fn decompose_task(
     Path(task_id): Path<Uuid>,
 ) -> Result<ResponseJson<ApiResponse<Vec<Task>>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(task_id = %task_id, "Decomposing task");
 
     // 1. Load task (must be in Ready status)
     let task = Task::find_by_id(pool, task_id)
@@ -218,6 +231,7 @@ pub async fn decompose_task(
             .map_err(|e| ApiError::BadRequest(format!("Failed to create child tasks: {e}")))?;
 
     // 8. Return created child tasks
+    tracing::info!(task_id = %task_id, child_count = child_tasks.len(), "Task decomposed");
     Ok(ResponseJson(ApiResponse::success(child_tasks)))
 }
 
@@ -295,6 +309,7 @@ pub async fn start_sprint(
     Json(payload): Json<StartSprintRequest>,
 ) -> Result<ResponseJson<ApiResponse<String>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(task_id = %task_id, child_count = payload.task_ids.len(), "Starting sprint");
 
     // 1. Load parent task
     let task = Task::find_by_id(pool, task_id)
@@ -421,6 +436,7 @@ pub async fn start_sprint(
     }
 
     // 10. Return sprint workspace ID
+    tracing::info!(task_id = %task_id, workspace_id = %ws.id, "Sprint started");
     Ok(ResponseJson(ApiResponse::success(ws.id.to_string())))
 }
 
@@ -509,6 +525,10 @@ pub async fn create_ralph_session(
     use db::models::ralph_session::{RalphSession, RalphSessionStatus, RalphSessionTask};
 
     let pool = &deployment.db().pool;
+    tracing::debug!(
+        task_count = payload.task_ids.len(),
+        "Creating ralph session"
+    );
 
     if payload.task_ids.is_empty() {
         return Err(ApiError::BadRequest(
@@ -668,6 +688,7 @@ pub async fn create_ralph_session(
 
     let session_tasks = RalphSessionTask::find_by_session_id(pool, session_id).await?;
 
+    tracing::info!(session_id = %session_id, "Ralph session created");
     Ok(ResponseJson(ApiResponse::success(RalphSessionResponse {
         session,
         tasks: session_tasks,

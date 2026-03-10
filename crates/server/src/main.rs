@@ -36,7 +36,7 @@ async fn main() -> Result<(), WickebanError> {
 
     let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
     let filter_string = format!(
-        "warn,server={level},services={level},db={level},executors={level},deployment={level},local_deployment={level},utils={level}",
+        "warn,tower_http={level},server={level},services={level},db={level},executors={level},deployment={level},local_deployment={level},utils={level}",
         level = log_level
     );
     let env_filter = EnvFilter::try_new(filter_string).expect("Failed to create tracing filter");

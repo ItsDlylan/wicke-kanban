@@ -26,6 +26,10 @@ import { DataTable, type ColumnDef } from '@/components/ui/table';
 import { statusLabels } from '@/utils/statusLabels';
 import { PlanningSessionsPanel } from './PlanningSessionsPanel';
 import { PendingApprovalQuestion } from './PendingApprovalQuestion';
+import { usePlanWorkspace } from '@/hooks/usePlanWorkspace';
+import { ExecutionProcessesProvider } from '@/contexts/ExecutionProcessesContext';
+import { EntriesProvider } from '@/contexts/EntriesContext';
+import { ConversationList } from '@/components/ui-new/containers/ConversationListContainer';
 
 interface TaskPanelProps {
   task: TaskWithAttemptStatus | null;
@@ -129,6 +133,9 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
   // Derive current plan values
   const planText = polledPlan ?? task?.plan ?? null;
   const planStatus = polledPlanStatus ?? task?.plan_status ?? null;
+
+  // Auto-plan streaming workspace
+  const planWorkspace = usePlanWorkspace(task?.id, planStatus);
 
   const {
     data: attempts = [],
@@ -415,7 +422,20 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
 
           {activeTab === 'plan' && (
             <div className="overflow-y-auto flex-1 min-h-0">
-              {planStatus === 'generating' && (
+              {planStatus === 'generating' && planWorkspace?.session && (
+                <ExecutionProcessesProvider
+                  attemptId={planWorkspace.id}
+                  sessionId={planWorkspace.session.id}
+                >
+                  <EntriesProvider key={planWorkspace.id}>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      <ConversationList attempt={planWorkspace} />
+                    </div>
+                  </EntriesProvider>
+                </ExecutionProcessesProvider>
+              )}
+
+              {planStatus === 'generating' && !planWorkspace?.session && (
                 <div className="space-y-4">
                   <div className="py-8 flex flex-col items-center gap-3 text-muted-foreground">
                     <Loader2 className="h-6 w-6 animate-spin" />

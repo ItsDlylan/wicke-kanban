@@ -63,8 +63,12 @@ export function useCreateWorkspace(options: UseCreateWorkspaceOptions = {}) {
         }
       }
     },
-    onError: (err) => {
-      console.error('Failed to create workspace:', err);
+    onError: (err, variables) => {
+      console.error('[useCreateWorkspace] Failed to create workspace', {
+        err,
+        projectId: variables.data.task.project_id,
+        title: variables.data.task.title,
+      });
     },
   });
 

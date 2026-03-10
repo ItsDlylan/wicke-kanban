@@ -1697,6 +1697,13 @@ pub trait ContainerService {
         executor_action: &ExecutorAction,
         run_reason: &ExecutionProcessRunReason,
     ) -> Result<ExecutionProcess, ContainerError> {
+        tracing::debug!(
+            workspace_id = %workspace.id,
+            session_id = %session.id,
+            run_reason = ?run_reason,
+            action_type = ?executor_action.typ(),
+            "Starting execution"
+        );
         // Update task status when starting an execution
         let task = workspace
             .parent_task(&self.db().pool)
@@ -1897,6 +1904,7 @@ pub trait ContainerService {
         let db_stream_handle = self.spawn_stream_raw_logs_to_db(&execution_process.id);
         self.store_db_stream_handle(execution_process.id, db_stream_handle)
             .await;
+        tracing::info!(process_id = %execution_process.id, "Execution started");
         Ok(execution_process)
     }
 

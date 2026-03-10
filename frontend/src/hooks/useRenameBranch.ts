@@ -54,7 +54,10 @@ export function useRenameBranch(
       onSuccess?.(data.branch);
     },
     onError: (err, _newBranchName, context) => {
-      console.error('Failed to rename branch:', err);
+      console.error('[useRenameBranch] Failed to rename branch', {
+        err,
+        attemptId,
+      });
       // Rollback to the previous value on error
       if (attemptId && context?.previousWorkspace) {
         queryClient.setQueryData(

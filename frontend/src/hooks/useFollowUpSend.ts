@@ -59,6 +59,10 @@ export function useFollowUpSend({
       onAfterSendCleanup();
       // Don't call jumpToLogsTab() - preserves focus on the follow-up editor
     } catch (error: unknown) {
+      console.error('[useFollowUpSend] Failed to start follow-up execution', {
+        err: error,
+        sessionId,
+      });
       const err = error as { message?: string };
       setFollowUpError(
         `Failed to start follow-up execution: ${err.message ?? 'Unknown error'}`

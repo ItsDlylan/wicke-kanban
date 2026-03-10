@@ -30,7 +30,7 @@ export function useMerge(
       onSuccess?.();
     },
     onError: (err) => {
-      console.error('Failed to merge:', err);
+      console.error('[useMerge] Failed to merge:', { err, attemptId });
       onError?.(err);
     },
   });

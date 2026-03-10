@@ -41,8 +41,11 @@ export function useTaskMutations(projectId?: string) {
         navigate(`${paths.task(projectId, createdTask.id)}/attempts/latest`);
       }
     },
-    onError: (err) => {
-      console.error('Failed to create task:', err);
+    onError: (err, variables) => {
+      console.error('[useTaskMutations.createTask] Failed to create task:', {
+        err,
+        taskData: variables,
+      });
     },
   });
 
@@ -63,8 +66,11 @@ export function useTaskMutations(projectId?: string) {
         navigate(`${paths.task(projectId, createdTask.id)}/attempts/latest`);
       }
     },
-    onError: (err) => {
-      console.error('Failed to create and start task:', err);
+    onError: (err, variables) => {
+      console.error(
+        '[useTaskMutations.createAndStart] Failed to create and start task:',
+        { err, taskData: variables }
+      );
     },
   });
 
@@ -74,8 +80,11 @@ export function useTaskMutations(projectId?: string) {
     onSuccess: (updatedTask: Task) => {
       invalidateQueries(updatedTask.id);
     },
-    onError: (err) => {
-      console.error('Failed to update task:', err);
+    onError: (err, variables) => {
+      console.error('[useTaskMutations.updateTask] Failed to update task:', {
+        err,
+        taskId: variables.taskId,
+      });
     },
   });
 
@@ -90,8 +99,11 @@ export function useTaskMutations(projectId?: string) {
       // Invalidate workspace summaries so they refresh with the deleted workspace removed
       queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
     },
-    onError: (err) => {
-      console.error('Failed to delete task:', err);
+    onError: (err, taskId) => {
+      console.error('[useTaskMutations.deleteTask] Failed to delete task:', {
+        err,
+        taskId,
+      });
     },
   });
 

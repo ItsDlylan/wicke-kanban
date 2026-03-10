@@ -17,8 +17,12 @@ export function useApprovalMutation() {
         execution_process_id: executionProcessId,
         status: { status: 'approved' },
       }),
-    onError: (err) => {
-      console.error('Failed to approve:', err);
+    onError: (err, variables) => {
+      console.error('[useApprovalMutation.approve] Failed to approve:', {
+        err,
+        approvalId: variables.approvalId,
+        processId: variables.executionProcessId,
+      });
     },
   });
 
@@ -31,8 +35,12 @@ export function useApprovalMutation() {
           reason: reason || 'User denied this request.',
         },
       }),
-    onError: (err) => {
-      console.error('Failed to deny:', err);
+    onError: (err, variables) => {
+      console.error('[useApprovalMutation.deny] Failed to deny:', {
+        err,
+        approvalId: variables.approvalId,
+        processId: variables.executionProcessId,
+      });
     },
   });
 

@@ -135,6 +135,8 @@ pub struct UpdateTask {
     pub parent_workspace_id: Option<Uuid>,
     pub parent_task_id: Option<Uuid>,
     pub image_ids: Option<Vec<Uuid>>,
+    pub task_type: Option<TaskType>,
+    pub is_human: Option<bool>,
 }
 
 impl Task {
@@ -322,11 +324,13 @@ ORDER BY t.created_at DESC"#,
         status: TaskStatus,
         parent_workspace_id: Option<Uuid>,
         parent_task_id: Option<Uuid>,
+        task_type: TaskType,
+        is_human: bool,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Task,
             r#"UPDATE tasks
-               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7
+               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, parent_task_id = $7, task_type = $8, is_human = $9
                WHERE id = $1 AND project_id = $2
                RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", task_type as "task_type!: TaskType", parent_workspace_id as "parent_workspace_id: Uuid", parent_task_id as "parent_task_id: Uuid", sort_order as "sort_order!: i32", plan, plan_status, is_human as "is_human!: bool", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -335,7 +339,9 @@ ORDER BY t.created_at DESC"#,
             description,
             status,
             parent_workspace_id,
-            parent_task_id
+            parent_task_id,
+            task_type,
+            is_human
         )
         .fetch_one(pool)
         .await
@@ -407,6 +413,11 @@ ORDER BY t.created_at DESC"#,
     where
         E: Executor<'e, Database = Sqlite>,
     {
+        tracing::warn!(
+            task_id = %id,
+            backtrace = %std::backtrace::Backtrace::force_capture(),
+            "Task::delete called — deleting task from database"
+        );
         let result = sqlx::query!("DELETE FROM tasks WHERE id = $1", id)
             .execute(executor)
             .await?;

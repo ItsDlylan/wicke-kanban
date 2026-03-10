@@ -586,6 +586,12 @@ impl LocalContainerService {
                 )
                 .await;
 
+                tracing::info!(
+                    task_id = %task_id,
+                    success = success,
+                    "auto_prepare_for_ralph completed"
+                );
+
                 let (target_status, status_name) = if success {
                     (TaskStatus::Ready, "Ready")
                 } else {

@@ -80,6 +80,7 @@ type Task = TaskWithAttemptStatus;
 const TASK_STATUSES = [
   'backlog',
   'plangenerating',
+  'specreview',
   'ready',
   'ralph',
   'inprogress',
@@ -267,10 +268,10 @@ export function ProjectTasks() {
     )
       return;
     taskShowcaseShown.current = true;
+    markSeenRef.current(taskShowcaseId);
 
     FeatureShowcaseDialog.show({ config: showcases.taskPanel }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeenRef.current(taskShowcaseId);
     });
   }, [isLoaded, isPanelOpen, taskShowcaseSeen, taskShowcaseId]);
 
@@ -289,12 +290,12 @@ export function ProjectTasks() {
     )
       return;
     planningShowcaseShown.current = true;
+    markSeenRef.current(planningShowcaseId);
 
     FeatureShowcaseDialog.show({
       config: showcases.planningBoard,
     }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeenRef.current(planningShowcaseId);
     });
   }, [isLoaded, isPlanningBoard, planningShowcaseSeen, planningShowcaseId]);
 
@@ -832,7 +833,10 @@ export function ProjectTasks() {
           description: task.description,
           status: newStatus,
           parent_workspace_id: task.parent_workspace_id,
+          parent_task_id: task.parent_task_id,
           image_ids: null,
+          task_type: task.task_type,
+          is_human: task.is_human,
         });
       } catch (err) {
         console.error('Failed to update task status:', err);

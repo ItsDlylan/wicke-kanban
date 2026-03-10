@@ -62,6 +62,7 @@ pub async fn create_session(
     Json(payload): Json<CreateSessionRequest>,
 ) -> Result<ResponseJson<ApiResponse<Session>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(workspace_id = %payload.workspace_id, "Creating session");
 
     // Verify workspace exists
     let _workspace = Workspace::find_by_id(pool, payload.workspace_id)
@@ -80,6 +81,7 @@ pub async fn create_session(
     )
     .await?;
 
+    tracing::info!(session_id = %session.id, "Session created");
     Ok(ResponseJson(ApiResponse::success(session)))
 }
 
@@ -113,7 +115,7 @@ pub async fn follow_up(
             "Workspace not found".to_string(),
         )))?;
 
-    tracing::info!("{:?}", workspace);
+    tracing::debug!(session_id = %session.id, workspace_id = %workspace.id, "Processing follow-up");
 
     deployment
         .container()
@@ -208,6 +210,7 @@ pub async fn follow_up(
         );
     }
 
+    tracing::info!(session_id = %session.id, process_id = %execution_process.id, "Follow-up started");
     Ok(ResponseJson(ApiResponse::success(execution_process)))
 }
 
@@ -218,6 +221,7 @@ pub async fn reset_process(
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
     let force_when_dirty = payload.force_when_dirty.unwrap_or(false);
     let perform_git_reset = payload.perform_git_reset.unwrap_or(true);
+    tracing::debug!(session_id = %session.id, process_id = %payload.process_id, force = force_when_dirty, "Resetting process");
 
     deployment
         .container()
@@ -229,6 +233,7 @@ pub async fn reset_process(
         )
         .await?;
 
+    tracing::info!(session_id = %session.id, process_id = %payload.process_id, "Process reset");
     Ok(ResponseJson(ApiResponse::success(())))
 }
 
