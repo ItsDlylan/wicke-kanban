@@ -304,6 +304,8 @@ pub async fn update_task(
         .parent_workspace_id
         .or(existing_task.parent_workspace_id);
     let parent_task_id = payload.parent_task_id.or(existing_task.parent_task_id);
+    let task_type = payload.task_type.unwrap_or(existing_task.task_type);
+    let is_human = payload.is_human.unwrap_or(existing_task.is_human);
 
     let task = Task::update(
         &deployment.db().pool,
@@ -314,6 +316,8 @@ pub async fn update_task(
         status,
         parent_workspace_id,
         parent_task_id,
+        task_type,
+        is_human,
     )
     .await?;
 

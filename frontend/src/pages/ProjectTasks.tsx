@@ -833,7 +833,10 @@ export function ProjectTasks() {
           description: task.description,
           status: newStatus,
           parent_workspace_id: task.parent_workspace_id,
+          parent_task_id: task.parent_task_id,
           image_ids: null,
+          task_type: task.task_type,
+          is_human: task.is_human,
         });
       } catch (err) {
         console.error('Failed to update task status:', err);

@@ -23,6 +23,31 @@ use crate::routes::containers::ContainerQuery;
 
 // ── MCP request/response types ──────────────────────────────────────────────
 
+/// Mirror of `db::TaskType` with `JsonSchema` so the MCP tool schema emits
+/// `{"enum": ["task","epic"]}` instead of a free-form string.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTaskType {
+    Task,
+    Epic,
+}
+
+impl McpTaskType {
+    fn into_db(self) -> TaskType {
+        match self {
+            McpTaskType::Task => TaskType::Task,
+            McpTaskType::Epic => TaskType::Epic,
+        }
+    }
+
+    fn from_db(t: &TaskType) -> Self {
+        match t {
+            TaskType::Task => McpTaskType::Task,
+            TaskType::Epic => McpTaskType::Epic,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct TaskSummary {
     #[schemars(description = "The unique identifier of the task")]
@@ -31,6 +56,10 @@ pub struct TaskSummary {
     pub title: String,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Task type: 'task' or 'epic'")]
+    pub task_type: McpTaskType,
+    #[schemars(description = "Whether this is a human-assigned task (not for AI agents)")]
+    pub is_human: bool,
     #[schemars(description = "Optional description of the task")]
     pub description: Option<String>,
     #[schemars(description = "When the task was created")]
@@ -45,6 +74,8 @@ pub struct TaskListItem {
     pub id: String,
     pub title: String,
     pub status: String,
+    pub task_type: McpTaskType,
+    pub is_human: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -68,12 +99,10 @@ pub struct McpCreateTaskRequest {
     )]
     pub parent_task_id: Option<Uuid>,
     #[schemars(
-        description = "Optional task type. Valid values: 'task' (default), 'epic'. Use 'epic' for planning/feature tickets."
+        description = "Optional task type. Use 'epic' for planning/feature tickets. Defaults to 'task'."
     )]
-    pub task_type: Option<String>,
-    #[schemars(
-        description = "If true, marks this as a human-assigned task (not for AI agents). Set task_type='epic' and is_human=true to create a human epic."
-    )]
+    pub task_type: Option<McpTaskType>,
+    #[schemars(description = "If true, marks this as a human-assigned task (not for AI agents).")]
     pub is_human: Option<bool>,
 }
 
@@ -167,6 +196,10 @@ pub struct McpUpdateTaskRequest {
         description = "Optional parent task ID. Set this to make the task a child/story of the specified parent task."
     )]
     pub parent_task_id: Option<Uuid>,
+    #[schemars(description = "New task type. Use 'epic' for planning/feature tickets.")]
+    pub task_type: Option<McpTaskType>,
+    #[schemars(description = "Set to true to mark as human-assigned, false to unmark.")]
+    pub is_human: Option<bool>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -236,12 +269,10 @@ pub struct McpCreateTaskWithContextRequest {
     )]
     pub parent_task_id: Option<Uuid>,
     #[schemars(
-        description = "Optional task type. Valid values: 'task' (default), 'epic'. Use 'epic' for planning/feature tickets."
+        description = "Optional task type. Use 'epic' for planning/feature tickets. Defaults to 'task'."
     )]
-    pub task_type: Option<String>,
-    #[schemars(
-        description = "If true, marks this as a human-assigned task (not for AI agents). Set task_type='epic' and is_human=true to create a human epic."
-    )]
+    pub task_type: Option<McpTaskType>,
+    #[schemars(description = "If true, marks this as a human-assigned task (not for AI agents).")]
     pub is_human: Option<bool>,
 }
 
@@ -547,6 +578,8 @@ impl TaskServer {
             id: task.id.to_string(),
             title: task.title.clone(),
             status: task.status.to_string(),
+            task_type: McpTaskType::from_db(&task.task_type),
+            is_human: task.is_human,
             description: task.description.clone(),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
@@ -558,6 +591,8 @@ impl TaskServer {
             id: task.id.to_string(),
             title: task.title.clone(),
             status: task.status.to_string(),
+            task_type: McpTaskType::from_db(&task.task_type),
+            is_human: task.is_human,
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
         }
@@ -575,18 +610,6 @@ impl TaskServer {
             )
             .unwrap()
         })
-    }
-
-    fn resolve_task_type(s: &str) -> Result<TaskType, CallToolResult> {
-        match s.to_lowercase().as_str() {
-            "task" => Ok(TaskType::Task),
-            "epic" => Ok(TaskType::Epic),
-            _ => Err(Self::err(
-                format!("Invalid task_type '{}'. Valid values: task, epic", s),
-                None::<String>,
-            )
-            .unwrap()),
-        }
     }
 }
 
@@ -627,16 +650,7 @@ impl TaskServer {
             None => None,
         };
 
-        let resolved_task_type = if let Some(ref s) = task_type {
-            match Self::resolve_task_type(s) {
-                Ok(tt) => Some(tt),
-                Err(e) => return Ok(e),
-            }
-        } else {
-            None
-        };
-
-        let is_epic = resolved_task_type == Some(TaskType::Epic);
+        let is_epic = task_type == Some(McpTaskType::Epic);
 
         let task_status = if let Some(ref s) = status {
             match Self::resolve_task_status(s) {
@@ -654,7 +668,7 @@ impl TaskServer {
             title,
             description: expanded_description,
             status: task_status,
-            task_type: resolved_task_type,
+            task_type: task_type.map(|t| t.into_db()),
             parent_workspace_id: None,
             parent_task_id,
             image_ids: None,
@@ -745,6 +759,8 @@ impl TaskServer {
             description,
             status,
             parent_task_id,
+            task_type,
+            is_human,
         }): Parameters<McpUpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         // Resolve status name to TaskStatus if provided
@@ -768,6 +784,8 @@ impl TaskServer {
             "description": expanded_description,
             "status": task_status,
             "parent_task_id": parent_task_id,
+            "task_type": task_type.map(|t| t.into_db()),
+            "is_human": is_human,
         });
 
         let url = self.url(&format!("/api/tasks/{}", task_id));
@@ -927,16 +945,7 @@ impl TaskServer {
             Some(self.expand_tags(&desc).await)
         };
 
-        let resolved_task_type = if let Some(ref s) = task_type {
-            match Self::resolve_task_type(s) {
-                Ok(tt) => Some(tt),
-                Err(e) => return Ok(e),
-            }
-        } else {
-            None
-        };
-
-        let is_epic = resolved_task_type == Some(TaskType::Epic);
+        let is_epic = task_type == Some(McpTaskType::Epic);
 
         let default_status = if is_epic {
             TaskStatus::Idea
@@ -949,7 +958,7 @@ impl TaskServer {
             title,
             description: expanded_description,
             status: Some(default_status),
-            task_type: resolved_task_type,
+            task_type: task_type.map(|t| t.into_db()),
             parent_workspace_id: None,
             parent_task_id,
             image_ids: None,
