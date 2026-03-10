@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const net = require("net");
+const os = require("os");
 
 const PORTS_FILE = path.join(__dirname, "..", ".dev-ports.json");
 const DEV_ASSETS_SEED = path.join(__dirname, "..", "dev_assets_seed");
@@ -60,6 +61,19 @@ function savePorts(ports) {
   } catch (error) {
     console.error("Failed to save ports:", error.message);
     throw error;
+  }
+}
+
+/**
+ * Write backend port to global port file so external projects can discover it
+ */
+function writeGlobalPortFile(port) {
+  try {
+    const dir = path.join(os.tmpdir(), "wickeban");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "wickeban.port"), String(port));
+  } catch (error) {
+    console.warn("Failed to write global port file:", error.message);
   }
 }
 
@@ -151,6 +165,7 @@ async function allocatePorts() {
 async function getPorts() {
   const ports = await allocatePorts();
   copyDevAssets();
+  writeGlobalPortFile(ports.backend);
   return ports;
 }
 
