@@ -57,7 +57,14 @@ fn main() -> anyhow::Result<()> {
                             port
                         } else {
                             // Fall back to global port file (works for external projects)
-                            let port = read_port_file("wickeban").await?;
+                            let port = read_port_file("wickeban").await.map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Could not discover backend port. Run 'pnpm run dev' first, \
+                                     or set VIBE_BACKEND_URL. Tried: .dev-ports.json (CWD), \
+                                     $TMPDIR/wickeban/wickeban.port ({})",
+                                    e
+                                )
+                            })?;
                             tracing::info!("[MCP] Using port from port file: {}", port);
                             port
                         }
@@ -85,10 +92,24 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Read the backend port from `.dev-ports.json` in the current working directory.
+/// Returns `None` silently if the file doesn't exist, or with a warning if it
+/// exists but is malformed.
 async fn read_dev_ports_json() -> Option<u16> {
     let path = std::env::current_dir().ok()?.join(".dev-ports.json");
-    let content = tokio::fs::read_to_string(&path).await.ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let port = json.get("backend")?.as_u64()?;
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    let json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("[MCP] Found .dev-ports.json but failed to parse: {}", e);
+            return None;
+        }
+    };
+    let port = json.get("backend").and_then(|v| v.as_u64()).or_else(|| {
+        tracing::warn!("[MCP] .dev-ports.json missing or invalid 'backend' field");
+        None
+    })?;
     u16::try_from(port).ok()
 }

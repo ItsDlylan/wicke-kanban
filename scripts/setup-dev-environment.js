@@ -149,7 +149,6 @@ async function allocatePorts() {
   };
 
   savePorts(ports);
-  writeGlobalPortFile(ports.backend);
 
   if (process.argv[2] === "get") {
     console.log("Allocated new dev ports:");
@@ -166,6 +165,7 @@ async function allocatePorts() {
 async function getPorts() {
   const ports = await allocatePorts();
   copyDevAssets();
+  writeGlobalPortFile(ports.backend);
   return ports;
 }
 
