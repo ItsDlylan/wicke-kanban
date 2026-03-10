@@ -291,6 +291,7 @@ pub async fn update_task(
 
     Json(payload): Json<UpdateTask>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
+    tracing::debug!(task_id = %existing_task.id, "Updating task");
     // Use existing values if not provided in update
     let title = payload.title.unwrap_or(existing_task.title);
     let description = match payload.description {
@@ -321,6 +322,7 @@ pub async fn update_task(
         TaskImage::associate_many_dedup(&deployment.db().pool, task.id, image_ids).await?;
     }
 
+    tracing::info!(task_id = %task.id, status = %task.status, "Task updated");
     Ok(ResponseJson(ApiResponse::success(task)))
 }
 

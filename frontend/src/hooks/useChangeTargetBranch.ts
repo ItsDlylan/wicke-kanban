@@ -59,7 +59,10 @@ export function useChangeTargetBranch(
       onSuccess?.(data);
     },
     onError: (err) => {
-      console.error('Failed to change target branch:', err);
+      console.error('[useChangeTargetBranch] Failed to change target branch', {
+        err,
+        attemptId,
+      });
       if (attemptId) {
         queryClient.invalidateQueries({
           queryKey: ['branchStatus', attemptId],

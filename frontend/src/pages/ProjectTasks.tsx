@@ -268,10 +268,10 @@ export function ProjectTasks() {
     )
       return;
     taskShowcaseShown.current = true;
+    markSeenRef.current(taskShowcaseId);
 
     FeatureShowcaseDialog.show({ config: showcases.taskPanel }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeenRef.current(taskShowcaseId);
     });
   }, [isLoaded, isPanelOpen, taskShowcaseSeen, taskShowcaseId]);
 
@@ -290,12 +290,12 @@ export function ProjectTasks() {
     )
       return;
     planningShowcaseShown.current = true;
+    markSeenRef.current(planningShowcaseId);
 
     FeatureShowcaseDialog.show({
       config: showcases.planningBoard,
     }).finally(() => {
       FeatureShowcaseDialog.hide();
-      markSeenRef.current(planningShowcaseId);
     });
   }, [isLoaded, isPlanningBoard, planningShowcaseSeen, planningShowcaseId]);
 

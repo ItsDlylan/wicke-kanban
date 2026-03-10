@@ -377,7 +377,13 @@ pub async fn auto_prepare_for_ralph(
 
             let spec = match spec {
                 Some(s) => s,
-                None => return false,
+                None => {
+                    tracing::error!(
+                        task_id = %task_id,
+                        "Spec generation failed after 2 attempts, no spec produced"
+                    );
+                    return false;
+                }
             };
 
             // Store the spec sheet
@@ -391,9 +397,25 @@ pub async fn auto_prepare_for_ralph(
                 tech_notes: Some(spec.tech_notes),
             };
 
+            tracing::info!(
+                task_id = %task_id,
+                has_overview = spec_data.overview.is_some(),
+                has_requirements = spec_data.requirements.is_some(),
+                has_acceptance_criteria = spec_data.acceptance_criteria.is_some(),
+                has_constraints = spec_data.constraints.is_some(),
+                has_tech_notes = spec_data.tech_notes.is_some(),
+                "Storing auto-generated spec sheet"
+            );
+
             match SpecSheet::upsert(pool, task_id, &spec_data).await {
                 Ok(s) => {
-                    tracing::info!("Auto-generated spec sheet for task {}", task_id);
+                    tracing::info!(
+                        task_id = %task_id,
+                        spec_id = %s.id,
+                        has_overview = s.overview.is_some(),
+                        has_requirements = s.requirements.is_some(),
+                        "Auto-generated spec sheet stored and verified"
+                    );
                     s
                 }
                 Err(e) => {

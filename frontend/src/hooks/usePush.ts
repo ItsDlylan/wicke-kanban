@@ -40,7 +40,7 @@ export function usePush(
       onSuccess?.();
     },
     onError: (err, variables) => {
-      console.error('Failed to push:', err);
+      console.error('[usePush] Failed to push:', { err, attemptId });
       const errorData =
         err instanceof PushErrorWithData ? err.errorData : undefined;
       onError?.(err, errorData, variables);

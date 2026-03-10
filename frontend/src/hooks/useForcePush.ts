@@ -36,7 +36,10 @@ export function useForcePush(
       onSuccess?.();
     },
     onError: (err) => {
-      console.error('Failed to force push:', err);
+      console.error('[useForcePush] Failed to force push', {
+        err,
+        attemptId,
+      });
       const errorData =
         err instanceof ForcePushErrorWithData ? err.errorData : undefined;
       onError?.(err, errorData);

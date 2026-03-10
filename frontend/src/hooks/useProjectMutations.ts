@@ -21,7 +21,7 @@ export function useProjectMutations(options?: UseProjectMutationsOptions) {
       options?.onCreateSuccess?.(project);
     },
     onError: (err) => {
-      console.error('Failed to create project:', err);
+      console.error('[useProjectMutations] Failed to create project', { err });
       options?.onCreateError?.(err);
     },
   });
@@ -47,8 +47,11 @@ export function useProjectMutations(options?: UseProjectMutationsOptions) {
 
       options?.onUpdateSuccess?.(project);
     },
-    onError: (err) => {
-      console.error('Failed to update project:', err);
+    onError: (err, variables) => {
+      console.error('[useProjectMutations] Failed to update project', {
+        err,
+        projectId: variables.projectId,
+      });
       options?.onUpdateError?.(err);
     },
   });

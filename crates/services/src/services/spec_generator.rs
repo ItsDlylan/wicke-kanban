@@ -67,6 +67,11 @@ pub fn build_spec_generation_prompt(
 /// Shell out to `claude --print -p <prompt>` to generate a spec.
 /// This is a blocking call — use `spawn_blocking` from async context.
 pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, SpecGeneratorError> {
+    tracing::debug!(
+        prompt_len = prompt.len(),
+        working_dir = %working_dir.display(),
+        "Running spec generation via claude --print"
+    );
     let schema = serde_json::json!({
         "type": "object",
         "properties": {
@@ -105,6 +110,11 @@ pub fn run_spec_generation(prompt: &str, working_dir: &Path) -> Result<String, S
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    tracing::debug!(
+        output_len = stdout.len(),
+        output_preview = %&stdout[..stdout.len().min(200)],
+        "Spec generation raw output received"
+    );
     if stdout.trim().is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(SpecGeneratorError::ExecutionFailed(format!(
@@ -135,6 +145,7 @@ fn find_json_object_start(s: &str) -> Option<&str> {
 /// Parse the raw output from Claude into a GeneratedSpec.
 /// Handles both the `--output-format json` envelope and raw JSON/markdown output.
 pub fn parse_spec_output(output: &str) -> Result<GeneratedSpec, SpecGeneratorError> {
+    tracing::debug!(output_len = output.len(), "Parsing spec output");
     let trimmed = output.trim();
 
     // If the output is a JSON envelope from --output-format json, extract the result field.
@@ -181,6 +192,15 @@ pub fn parse_spec_output(output: &str) -> Result<GeneratedSpec, SpecGeneratorErr
 
     let result: GeneratedSpec = serde_json::from_str(json_str)
         .map_err(|e| SpecGeneratorError::ParseFailed(format!("{e}: input was: {json_str}")))?;
+
+    tracing::info!(
+        overview_len = result.overview.len(),
+        requirements_count = result.requirements.len(),
+        acceptance_criteria_count = result.acceptance_criteria.len(),
+        constraints_count = result.constraints.len(),
+        tech_notes_len = result.tech_notes.len(),
+        "Spec parsed successfully"
+    );
 
     Ok(result)
 }

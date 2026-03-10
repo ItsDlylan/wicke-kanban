@@ -42,8 +42,11 @@ export function useWorkspaceMutations(options?: UseWorkspaceMutationsOptions) {
       queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
       options?.onArchiveSuccess?.(params);
     },
-    onError: (err) => {
-      console.error('Failed to toggle workspace archive:', err);
+    onError: (err, variables) => {
+      console.error(
+        '[useWorkspaceMutations.toggleArchive] Failed to toggle workspace archive:',
+        { err, workspaceId: variables.workspaceId }
+      );
     },
   });
 
@@ -55,8 +58,11 @@ export function useWorkspaceMutations(options?: UseWorkspaceMutationsOptions) {
       // Invalidate workspace summaries so stats are refreshed
       queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
     },
-    onError: (err) => {
-      console.error('Failed to toggle workspace pin:', err);
+    onError: (err, variables) => {
+      console.error(
+        '[useWorkspaceMutations.togglePin] Failed to toggle workspace pin:',
+        { err, workspaceId: variables.workspaceId }
+      );
     },
   });
 
@@ -72,8 +78,11 @@ export function useWorkspaceMutations(options?: UseWorkspaceMutationsOptions) {
       queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
       options?.onDeleteSuccess?.(params);
     },
-    onError: (err) => {
-      console.error('Failed to delete workspace:', err);
+    onError: (err, variables) => {
+      console.error(
+        '[useWorkspaceMutations.deleteWorkspace] Failed to delete workspace:',
+        { err, workspaceId: variables.workspaceId }
+      );
     },
   });
 

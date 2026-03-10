@@ -48,5 +48,11 @@ export function useCreateSession() {
         queryKey: ['workspaceSessions', session.workspace_id],
       });
     },
+    onError: (err, variables) => {
+      console.error('[useCreateSession] Failed to create session', {
+        err,
+        workspaceId: variables.workspaceId,
+      });
+    },
   });
 }

@@ -320,6 +320,24 @@ impl IntoResponse for ApiError {
             ApiError::Io(_) => ErrorInfo::internal("IoError"),
         };
 
+        match info.status.as_u16() {
+            500..=599 => tracing::error!(
+                status = %info.status,
+                error_type = info.error_type,
+                "API error: {self}"
+            ),
+            404 => tracing::debug!(
+                status = %info.status,
+                error_type = info.error_type,
+                "API not found: {self}"
+            ),
+            _ => tracing::warn!(
+                status = %info.status,
+                error_type = info.error_type,
+                "API error: {self}"
+            ),
+        }
+
         let message = info
             .message
             .unwrap_or_else(|| format!("{}: {}", info.error_type, self));

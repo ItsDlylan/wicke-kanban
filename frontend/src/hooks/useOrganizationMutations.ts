@@ -52,7 +52,12 @@ export function useOrganizationMutations(
       options?.onCreateSuccess?.(result);
     },
     onError: (err) => {
-      console.error('Failed to create organization:', err);
+      console.error(
+        '[useOrganizationMutations] Failed to create organization',
+        {
+          err,
+        }
+      );
       options?.onCreateError?.(err);
     },
   });
@@ -75,8 +80,11 @@ export function useOrganizationMutations(
       });
       options?.onInviteSuccess?.(result);
     },
-    onError: (err) => {
-      console.error('Failed to create invitation:', err);
+    onError: (err, variables) => {
+      console.error('[useOrganizationMutations] Failed to create invitation', {
+        err,
+        orgId: variables.orgId,
+      });
       options?.onInviteError?.(err);
     },
   });
@@ -98,8 +106,12 @@ export function useOrganizationMutations(
       });
       options?.onRevokeSuccess?.();
     },
-    onError: (err) => {
-      console.error('Failed to revoke invitation:', err);
+    onError: (err, variables) => {
+      console.error('[useOrganizationMutations] Failed to revoke invitation', {
+        err,
+        orgId: variables.orgId,
+        invitationId: variables.invitationId,
+      });
       options?.onRevokeError?.(err);
     },
   });
@@ -115,8 +127,12 @@ export function useOrganizationMutations(
       queryClient.invalidateQueries({ queryKey: organizationKeys.userList() });
       options?.onRemoveSuccess?.();
     },
-    onError: (err) => {
-      console.error('Failed to remove member:', err);
+    onError: (err, variables) => {
+      console.error('[useOrganizationMutations] Failed to remove member', {
+        err,
+        orgId: variables.orgId,
+        userId: variables.userId,
+      });
       options?.onRemoveError?.(err);
     },
   });
@@ -136,8 +152,13 @@ export function useOrganizationMutations(
       queryClient.invalidateQueries({ queryKey: organizationKeys.userList() });
       options?.onRoleChangeSuccess?.();
     },
-    onError: (err) => {
-      console.error('Failed to update member role:', err);
+    onError: (err, variables) => {
+      console.error('[useOrganizationMutations] Failed to update member role', {
+        err,
+        orgId: variables.orgId,
+        userId: variables.userId,
+        role: variables.role,
+      });
       options?.onRoleChangeError?.(err);
     },
   });
@@ -160,8 +181,14 @@ export function useOrganizationMutations(
       queryClient.invalidateQueries({ queryKey: organizationKeys.userList() });
       options?.onDeleteSuccess?.();
     },
-    onError: (err) => {
-      console.error('Failed to delete organization:', err);
+    onError: (err, orgId) => {
+      console.error(
+        '[useOrganizationMutations] Failed to delete organization',
+        {
+          err,
+          orgId,
+        }
+      );
       options?.onDeleteError?.(err);
     },
   });

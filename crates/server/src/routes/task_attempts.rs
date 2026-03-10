@@ -453,6 +453,7 @@ pub async fn merge_task_attempt(
     Json(request): Json<MergeTaskAttemptRequest>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(workspace_id = %workspace.id, repo_id = %request.repo_id, "Merging task attempt");
 
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)
@@ -542,6 +543,7 @@ pub async fn merge_task_attempt(
         )
         .await;
 
+    tracing::info!(workspace_id = %workspace.id, "Task attempt merged");
     Ok(ResponseJson(ApiResponse::success(())))
 }
 
@@ -551,6 +553,7 @@ pub async fn push_task_attempt_branch(
     Json(request): Json<PushTaskAttemptRequest>,
 ) -> Result<ResponseJson<ApiResponse<(), PushError>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(workspace_id = %workspace.id, repo_id = %request.repo_id, "Pushing task attempt branch");
 
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)
@@ -1189,6 +1192,7 @@ pub async fn rebase_task_attempt(
     Json(payload): Json<RebaseTaskAttemptRequest>,
 ) -> Result<ResponseJson<ApiResponse<(), GitOperationError>>, ApiError> {
     let pool = &deployment.db().pool;
+    tracing::debug!(workspace_id = %workspace.id, repo_id = %payload.repo_id, "Rebasing task attempt");
 
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, payload.repo_id)
@@ -1480,6 +1484,7 @@ pub async fn stop_task_attempt_execution(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    tracing::debug!(workspace_id = %workspace.id, "Stopping task attempt execution");
     deployment.container().try_stop(&workspace, false).await;
 
     deployment
@@ -1491,6 +1496,7 @@ pub async fn stop_task_attempt_execution(
         )
         .await;
 
+    tracing::info!(workspace_id = %workspace.id, "Task attempt execution stopped");
     Ok(ResponseJson(ApiResponse::success(())))
 }
 

@@ -333,6 +333,11 @@ pub async fn start_child_execution<C: ContainerService + Sync + ?Sized>(
     executor_profile_id: &ExecutorProfileId,
     repos: &[WorkspaceRepoInput],
 ) -> Result<(), RalphLoopError> {
+    tracing::debug!(
+        child_task_id = %child_task.id,
+        parent_workspace_id = %parent_workspace.id,
+        "Starting child execution"
+    );
     // Create workspace for the child task
     let workspace_id = Uuid::new_v4();
     let branch = parent_workspace.branch.clone();
@@ -373,6 +378,7 @@ pub async fn start_child_execution<C: ContainerService + Sync + ?Sized>(
         .start_workspace(&workspace, executor_profile_id.clone())
         .await?;
 
+    tracing::info!(workspace_id = %workspace.id, "Child execution started");
     Ok(())
 }
 

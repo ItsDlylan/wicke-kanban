@@ -71,6 +71,10 @@ export function useSessionSend({
           onSelectSession?.(session.id);
           return true;
         } catch (e: unknown) {
+          console.error('[useSessionSend] Failed to create session', {
+            err: e,
+            workspaceId,
+          });
           const err = e as { message?: string };
           setError(
             `Failed to create session: ${err.message ?? 'Unknown error'}`
@@ -91,6 +95,10 @@ export function useSessionSend({
           });
           return true;
         } catch (e: unknown) {
+          console.error('[useSessionSend] Failed to send follow-up', {
+            err: e,
+            sessionId,
+          });
           const err = e as { message?: string };
           setError(`Failed to send: ${err.message ?? 'Unknown error'}`);
           return false;

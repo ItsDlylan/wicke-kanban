@@ -103,6 +103,7 @@ impl SpecSheet {
     ) -> Result<Self, sqlx::Error> {
         let existing = Self::find_by_task_id(pool, task_id).await?;
         if existing.is_some() {
+            tracing::debug!(task_id = %task_id, "Updating existing spec sheet");
             let update_data = UpdateSpecSheet {
                 overview: data.overview.clone(),
                 requirements: data.requirements.clone(),
@@ -112,6 +113,7 @@ impl SpecSheet {
             };
             Self::update(pool, task_id, &update_data).await
         } else {
+            tracing::debug!(task_id = %task_id, "Creating new spec sheet");
             Self::create(pool, task_id, data).await
         }
     }
