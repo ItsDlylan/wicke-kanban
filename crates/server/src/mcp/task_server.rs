@@ -3,7 +3,7 @@ use std::str::FromStr;
 use db::models::{
     project::Project,
     tag::Tag,
-    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus},
+    task::{CreateTask, Task, TaskStatus, TaskType, TaskWithAttemptStatus},
     workspace::WorkspaceContext,
 };
 use regex::Regex;
@@ -67,6 +67,14 @@ pub struct McpCreateTaskRequest {
         description = "Optional parent task ID. Set this to make the new task a child/story of the specified parent task."
     )]
     pub parent_task_id: Option<Uuid>,
+    #[schemars(
+        description = "Optional task type. Valid values: 'task' (default), 'epic'. Use 'epic' for planning/feature tickets."
+    )]
+    pub task_type: Option<String>,
+    #[schemars(
+        description = "If true, marks this as a human-assigned task (not for AI agents). Set task_type='epic' and is_human=true to create a human epic."
+    )]
+    pub is_human: Option<bool>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -227,6 +235,14 @@ pub struct McpCreateTaskWithContextRequest {
         description = "Optional parent task ID. Set this to make the new task a child/story of the specified parent task."
     )]
     pub parent_task_id: Option<Uuid>,
+    #[schemars(
+        description = "Optional task type. Valid values: 'task' (default), 'epic'. Use 'epic' for planning/feature tickets."
+    )]
+    pub task_type: Option<String>,
+    #[schemars(
+        description = "If true, marks this as a human-assigned task (not for AI agents). Set task_type='epic' and is_human=true to create a human epic."
+    )]
+    pub is_human: Option<bool>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -560,6 +576,18 @@ impl TaskServer {
             .unwrap()
         })
     }
+
+    fn resolve_task_type(s: &str) -> Result<TaskType, CallToolResult> {
+        match s.to_lowercase().as_str() {
+            "task" => Ok(TaskType::Task),
+            "epic" => Ok(TaskType::Epic),
+            _ => Err(Self::err(
+                format!("Invalid task_type '{}'. Valid values: task, epic", s),
+                None::<String>,
+            )
+            .unwrap()),
+        }
+    }
 }
 
 // ── MCP Tools ───────────────────────────────────────────────────────────────
@@ -585,6 +613,8 @@ impl TaskServer {
             description,
             status,
             parent_task_id,
+            task_type,
+            is_human,
         }): Parameters<McpCreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
@@ -597,11 +627,24 @@ impl TaskServer {
             None => None,
         };
 
+        let resolved_task_type = if let Some(ref s) = task_type {
+            match Self::resolve_task_type(s) {
+                Ok(tt) => Some(tt),
+                Err(e) => return Ok(e),
+            }
+        } else {
+            None
+        };
+
+        let is_epic = resolved_task_type == Some(TaskType::Epic);
+
         let task_status = if let Some(ref s) = status {
             match Self::resolve_task_status(s) {
                 Ok(ts) => Some(ts),
                 Err(e) => return Ok(e),
             }
+        } else if is_epic {
+            Some(TaskStatus::Idea)
         } else {
             Some(TaskStatus::Backlog)
         };
@@ -611,13 +654,13 @@ impl TaskServer {
             title,
             description: expanded_description,
             status: task_status,
-            task_type: None,
+            task_type: resolved_task_type,
             parent_workspace_id: None,
             parent_task_id,
             image_ids: None,
             sort_order: None,
             plan_status: None,
-            is_human: None,
+            is_human,
         };
 
         let url = self.url("/api/tasks");
@@ -833,6 +876,8 @@ impl TaskServer {
             error_output,
             command,
             parent_task_id,
+            task_type,
+            is_human,
         }): Parameters<McpCreateTaskWithContextRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_id = match self.resolve_project_id(project_id) {
@@ -882,18 +927,35 @@ impl TaskServer {
             Some(self.expand_tags(&desc).await)
         };
 
+        let resolved_task_type = if let Some(ref s) = task_type {
+            match Self::resolve_task_type(s) {
+                Ok(tt) => Some(tt),
+                Err(e) => return Ok(e),
+            }
+        } else {
+            None
+        };
+
+        let is_epic = resolved_task_type == Some(TaskType::Epic);
+
+        let default_status = if is_epic {
+            TaskStatus::Idea
+        } else {
+            TaskStatus::Backlog
+        };
+
         let payload = CreateTask {
             project_id,
             title,
             description: expanded_description,
-            status: Some(TaskStatus::Backlog),
-            task_type: None,
+            status: Some(default_status),
+            task_type: resolved_task_type,
             parent_workspace_id: None,
             parent_task_id,
             image_ids: None,
             sort_order: None,
             plan_status: None,
-            is_human: None,
+            is_human,
         };
 
         let url = self.url("/api/tasks");
