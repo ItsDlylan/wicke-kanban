@@ -21,6 +21,57 @@ use uuid::Uuid;
 
 use crate::routes::containers::ContainerQuery;
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Deserialize a bool that may arrive as a JSON string (`"true"` / `"false"`)
+/// or a native boolean.  MCP clients (e.g. Claude Code) sometimes send tool
+/// parameters as strings even when the schema declares them as `boolean`.
+fn deserialize_bool_from_string_or_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct BoolVisitor;
+
+    impl<'de> de::Visitor<'de> for BoolVisitor {
+        type Value = Option<bool>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a boolean or a string representing a boolean")
+        }
+
+        fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            match v {
+                "true" => Ok(Some(true)),
+                "false" => Ok(Some(false)),
+                _ => Err(E::custom(format!("expected 'true' or 'false', got '{v}'"))),
+            }
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2: serde::Deserializer<'de>>(
+            self,
+            deserializer: D2,
+        ) -> Result<Self::Value, D2::Error> {
+            deserializer.deserialize_any(BoolVisitor)
+        }
+    }
+
+    deserializer.deserialize_any(BoolVisitor)
+}
+
 // ── MCP request/response types ──────────────────────────────────────────────
 
 /// Mirror of `db::TaskType` with `JsonSchema` so the MCP tool schema emits
@@ -103,6 +154,7 @@ pub struct McpCreateTaskRequest {
     )]
     pub task_type: Option<McpTaskType>,
     #[schemars(description = "If true, marks this as a human-assigned task (not for AI agents).")]
+    #[serde(default, deserialize_with = "deserialize_bool_from_string_or_bool")]
     pub is_human: Option<bool>,
 }
 
@@ -199,6 +251,7 @@ pub struct McpUpdateTaskRequest {
     #[schemars(description = "New task type. Use 'epic' for planning/feature tickets.")]
     pub task_type: Option<McpTaskType>,
     #[schemars(description = "Set to true to mark as human-assigned, false to unmark.")]
+    #[serde(default, deserialize_with = "deserialize_bool_from_string_or_bool")]
     pub is_human: Option<bool>,
 }
 
@@ -273,6 +326,7 @@ pub struct McpCreateTaskWithContextRequest {
     )]
     pub task_type: Option<McpTaskType>,
     #[schemars(description = "If true, marks this as a human-assigned task (not for AI agents).")]
+    #[serde(default, deserialize_with = "deserialize_bool_from_string_or_bool")]
     pub is_human: Option<bool>,
 }
 
@@ -650,6 +704,13 @@ impl TaskServer {
             None => None,
         };
 
+        // Human tasks are always epics
+        let task_type = if is_human == Some(true) {
+            Some(McpTaskType::Epic)
+        } else {
+            task_type
+        };
+
         let is_epic = task_type == Some(McpTaskType::Epic);
 
         let task_status = if let Some(ref s) = status {
@@ -943,6 +1004,13 @@ impl TaskServer {
             None
         } else {
             Some(self.expand_tags(&desc).await)
+        };
+
+        // Human tasks are always epics
+        let task_type = if is_human == Some(true) {
+            Some(McpTaskType::Epic)
+        } else {
+            task_type
         };
 
         let is_epic = task_type == Some(McpTaskType::Epic);
