@@ -4,7 +4,7 @@
             "command": "/Users/dylanschwindt/Desktop/Projects/wicke-kanban/target/debug/mcp_task_server",
             "args": [],
             "env": {
-                "VIBE_BACKEND_URL": "http://127.0.0.1:3001"
+                "VIBE_BACKEND_URL": "http://127.0.0.1:3002"
             }
         }
     }
