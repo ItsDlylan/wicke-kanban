@@ -51,9 +51,16 @@ fn main() -> anyhow::Result<()> {
                         })?
                     }
                     Err(_) => {
-                        let port = read_port_file("wickeban").await?;
-                        tracing::info!("[MCP] Using port from port file: {}", port);
-                        port
+                        // Try .dev-ports.json in CWD first (works for same-project and worktrees)
+                        if let Some(port) = read_dev_ports_json().await {
+                            tracing::info!("[MCP] Using port from .dev-ports.json: {}", port);
+                            port
+                        } else {
+                            // Fall back to global port file (works for external projects)
+                            let port = read_port_file("wickeban").await?;
+                            tracing::info!("[MCP] Using port from port file: {}", port);
+                            port
+                        }
                     }
                 };
 
@@ -75,4 +82,13 @@ fn main() -> anyhow::Result<()> {
             service.waiting().await?;
             Ok(())
         })
+}
+
+/// Read the backend port from `.dev-ports.json` in the current working directory.
+async fn read_dev_ports_json() -> Option<u16> {
+    let path = std::env::current_dir().ok()?.join(".dev-ports.json");
+    let content = tokio::fs::read_to_string(&path).await.ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let port = json.get("backend")?.as_u64()?;
+    u16::try_from(port).ok()
 }
