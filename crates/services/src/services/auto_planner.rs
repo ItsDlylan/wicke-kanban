@@ -317,6 +317,16 @@ pub async fn auto_prepare_for_ralph(
     plan_text: &str,
     working_dir: &Path,
 ) -> bool {
+    tracing::info!(
+        task_id = %task_id,
+        project_id = %project_id,
+        title = %title,
+        plan_len = plan_text.len(),
+        working_dir = %working_dir.display(),
+        working_dir_exists = working_dir.exists(),
+        "Starting auto_prepare_for_ralph: spec generation + decomposition"
+    );
+
     // Step 1: Check if spec already exists (idempotent on recovery)
     let stored_spec = match SpecSheet::find_by_task_id(pool, task_id).await {
         Ok(Some(existing)) => {
@@ -349,27 +359,32 @@ pub async fn auto_prepare_for_ralph(
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "Failed to parse auto-generated spec for task {} (attempt {}/2): {}",
-                                task_id,
-                                attempt,
-                                e
+                                task_id = %task_id,
+                                attempt = attempt,
+                                working_dir = %working_dir.display(),
+                                raw_output_len = raw_output.len(),
+                                raw_output_preview = %&raw_output[..raw_output.len().min(500)],
+                                error = %e,
+                                "Failed to parse auto-generated spec output"
                             );
                         }
                     },
                     Ok(Err(e)) => {
                         tracing::warn!(
-                            "Auto spec generation failed for task {} (attempt {}/2): {}",
-                            task_id,
-                            attempt,
-                            e
+                            task_id = %task_id,
+                            attempt = attempt,
+                            working_dir = %working_dir.display(),
+                            error = %e,
+                            "Auto spec generation execution failed"
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "Auto spec generation task panicked for task {} (attempt {}/2): {}",
-                            task_id,
-                            attempt,
-                            e
+                            task_id = %task_id,
+                            attempt = attempt,
+                            working_dir = %working_dir.display(),
+                            error = %e,
+                            "Auto spec generation task panicked"
                         );
                     }
                 }
@@ -380,7 +395,10 @@ pub async fn auto_prepare_for_ralph(
                 None => {
                     tracing::error!(
                         task_id = %task_id,
-                        "Spec generation failed after 2 attempts, no spec produced"
+                        working_dir = %working_dir.display(),
+                        working_dir_exists = working_dir.exists(),
+                        plan_text_len = plan_text.len(),
+                        "Spec generation failed after 2 attempts — no spec produced. Check logs above for per-attempt errors."
                     );
                     return false;
                 }

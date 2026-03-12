@@ -145,6 +145,23 @@ pub fn parse_decomposition_output(output: &str) -> Result<DecompositionResult, D
         if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(trimmed) {
             if let Some(result_str) = envelope.get("result").and_then(|v| v.as_str()) {
                 extracted = result_str.trim().to_string();
+                if extracted.is_empty() {
+                    let is_error = envelope
+                        .get("is_error")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let stop_reason = envelope
+                        .get("stop_reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let num_turns = envelope
+                        .get("num_turns")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    return Err(DecomposerError::ParseFailed(format!(
+                        "Claude returned empty result in envelope (is_error={is_error}, stop_reason={stop_reason}, num_turns={num_turns})"
+                    )));
+                }
                 &extracted
             } else {
                 trimmed
@@ -192,6 +209,12 @@ pub fn parse_decomposition_output(output: &str) -> Result<DecompositionResult, D
 
 /// Shell out to `claude --print -p <prompt>` to get decomposition output.
 pub fn run_decomposition(prompt: &str, working_dir: &Path) -> Result<String, DecomposerError> {
+    tracing::info!(
+        prompt_len = prompt.len(),
+        working_dir = %working_dir.display(),
+        working_dir_exists = working_dir.exists(),
+        "Starting decomposition via claude --print"
+    );
     let schema = serde_json::json!({
         "type": "object",
         "properties": {
@@ -238,7 +261,20 @@ pub fn run_decomposition(prompt: &str, working_dir: &Path) -> Result<String, Dec
         )));
     }
 
+    let stderr_text = String::from_utf8_lossy(&output.stderr);
+    if !stderr_text.trim().is_empty() {
+        tracing::warn!(
+            stderr = %stderr_text,
+            "claude --print (decomposition) succeeded but produced stderr output"
+        );
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    tracing::info!(
+        output_len = stdout.len(),
+        output_preview = %&stdout[..stdout.len().min(500)],
+        "Decomposition raw output received"
+    );
     Ok(stdout)
 }
 
@@ -360,6 +396,28 @@ mod tests {
     fn test_parse_decomposition_output_empty_stories() {
         let output = r#"{ "stories": [] }"#;
         assert!(parse_decomposition_output(output).is_err());
+    }
+
+    #[test]
+    fn test_parse_decomposition_output_empty_result_in_envelope() {
+        let envelope = serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "duration_ms": 120000,
+            "num_turns": 11,
+            "result": "",
+            "stop_reason": "end_turn",
+            "session_id": "test-session"
+        });
+        let output = serde_json::to_string(&envelope).unwrap();
+        let err = parse_decomposition_output(&output).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("empty result"),
+            "expected empty result error, got: {msg}"
+        );
+        assert!(msg.contains("num_turns=11"));
     }
 
     #[test]

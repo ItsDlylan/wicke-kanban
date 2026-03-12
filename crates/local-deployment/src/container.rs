@@ -575,6 +575,15 @@ impl LocalContainerService {
                 let project_id = ctx.task.project_id;
                 let title = ctx.task.title.clone();
                 let description = ctx.task.description.clone();
+
+                tracing::info!(
+                    task_id = %task_id,
+                    working_dir = %working_dir.display(),
+                    working_dir_exists = working_dir.exists(),
+                    plan_len = plan.len(),
+                    "AutoPlan: starting post-plan steps (spec generation + decomposition)"
+                );
+
                 let success = auto_planner::auto_prepare_for_ralph(
                     pool,
                     task_id,
@@ -596,8 +605,10 @@ impl LocalContainerService {
                     (TaskStatus::Ready, "Ready")
                 } else {
                     tracing::warn!(
-                        "AutoPlan: spec generation failed for task {}, moving to SpecReview",
-                        task_id
+                        task_id = %task_id,
+                        working_dir = %working_dir.display(),
+                        working_dir_exists = working_dir.exists(),
+                        "AutoPlan: spec generation failed, moving to SpecReview with blank spec. Review server logs for claude --print errors."
                     );
                     (TaskStatus::SpecReview, "SpecReview")
                 };
