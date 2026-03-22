@@ -57,6 +57,11 @@ pub fn validate_origin<B>(req: &mut Request<B>) -> Result<(), Response> {
         return Err(forbidden());
     };
 
+    // In dev, allow cloudflared tunnel origins for worktree sharing
+    if cfg!(debug_assertions) && origin_key.host.ends_with(".trycloudflare.com") {
+        return Ok(());
+    }
+
     if allowed_origins()
         .iter()
         .any(|allowed| allowed == &origin_key)

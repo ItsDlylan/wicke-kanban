@@ -78,6 +78,10 @@ wickeban-*.tgz
 # Development ports file
 .dev-ports.json
 
+# Tunnel files
+.tunnel.pid
+.tunnel.log
+
 dev_assets
 /frontend/.env.sentry-build-plugin
 .ssh

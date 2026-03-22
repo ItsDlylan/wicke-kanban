@@ -13,6 +13,8 @@ WORKTREES_DIR="$(cd "$PROJECT_ROOT/.." && pwd)/wickeban-worktrees"
 DB_SEED_PATH="dev_assets_seed"
 DEV_ASSETS_PATH="dev_assets"
 PORTS_FILE=".dev-ports.json"
+TUNNEL_PID_FILE=".tunnel.pid"
+TUNNEL_LOG_FILE=".tunnel.log"
 
 # Colors
 RED='\033[0;31m'
@@ -486,6 +488,145 @@ cmd_url() {
     get_url "$wt_path"
 }
 
+# Resolve worktree path from optional branch arg (auto-detects if omitted)
+resolve_wt_path() {
+    local branch="${1:-}"
+
+    if [[ -n "$branch" ]]; then
+        local wt_path
+        wt_path="$(worktree_path "$branch")"
+        if [[ ! -d "$wt_path" ]]; then
+            die "No worktree found for branch '$branch'"
+        fi
+        echo "$wt_path"
+        return
+    fi
+
+    # Auto-detect: check if we're in a worktree
+    local current_dir
+    current_dir="$(pwd)"
+    if [[ "$current_dir" == "$WORKTREES_DIR"* ]]; then
+        echo "$current_dir"
+    else
+        echo "$PROJECT_ROOT"
+    fi
+}
+
+cmd_share() {
+    local branch=""
+    local stop=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            stop)
+                stop=true
+                shift
+                branch="${1:-}"
+                break
+                ;;
+            -*)
+                die "Unknown option: $1"
+                ;;
+            *)
+                branch="$1"
+                ;;
+        esac
+        shift
+    done
+
+    local wt_path
+    wt_path="$(resolve_wt_path "$branch")"
+
+    local pid_file="$wt_path/$TUNNEL_PID_FILE"
+    local log_file="$wt_path/$TUNNEL_LOG_FILE"
+
+    # Handle stop
+    if [[ "$stop" == true ]]; then
+        if [[ -f "$pid_file" ]]; then
+            local pid
+            pid="$(cat "$pid_file")"
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null
+                success "Tunnel stopped (PID $pid)"
+            else
+                info "Tunnel process (PID $pid) already exited"
+            fi
+            rm -f "$pid_file" "$log_file"
+        else
+            info "No active tunnel found"
+        fi
+        return
+    fi
+
+    # Check if cloudflared is installed
+    if ! command -v cloudflared &>/dev/null; then
+        die "cloudflared is not installed. Install with: brew install cloudflare/cloudflare/cloudflared"
+    fi
+
+    # Check if tunnel is already running
+    if [[ -f "$pid_file" ]]; then
+        local existing_pid
+        existing_pid="$(cat "$pid_file")"
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            # Tunnel is already running, show the URL
+            local existing_url
+            existing_url="$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "$log_file" 2>/dev/null | tail -1 || echo "")"
+            if [[ -n "$existing_url" ]]; then
+                echo -e "${GREEN}Tunnel already running:${NC} $existing_url"
+            else
+                echo -e "${YELLOW}Tunnel running (PID $existing_pid) but URL not found in logs${NC}"
+            fi
+            return
+        else
+            # Stale PID file
+            rm -f "$pid_file" "$log_file"
+        fi
+    fi
+
+    # Get frontend port
+    local port
+    port="$(get_frontend_port "$wt_path")"
+    if [[ -z "$port" ]]; then
+        die "No frontend port found in $wt_path/$PORTS_FILE — start the dev server first (pnpm run dev)"
+    fi
+
+    info "Starting cloudflared tunnel to http://localhost:$port ..."
+
+    # Start cloudflared in background, log output
+    cloudflared tunnel --url "http://localhost:$port" > "$log_file" 2>&1 &
+    local tunnel_pid=$!
+    echo "$tunnel_pid" > "$pid_file"
+
+    # Wait for the URL to appear in the log (up to 15 seconds)
+    local url=""
+    for i in $(seq 1 30); do
+        url="$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "$log_file" 2>/dev/null | tail -1 || echo "")"
+        if [[ -n "$url" ]]; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    if [[ -n "$url" ]]; then
+        echo ""
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BOLD}Tunnel is live!${NC}"
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${CYAN}URL:${NC}       $url"
+        echo -e "  ${CYAN}Local:${NC}     http://localhost:$port"
+        echo -e "  ${CYAN}PID:${NC}       $tunnel_pid"
+        echo -e "  ${CYAN}Log:${NC}       $log_file"
+        echo ""
+        echo -e "  ${YELLOW}Stop with:${NC} bin/worktree share stop${branch:+ $branch}"
+        echo ""
+    else
+        warn "Tunnel started (PID $tunnel_pid) but URL not yet available."
+        warn "Check logs: cat $log_file"
+    fi
+}
+
 cmd_help() {
     echo -e "${BOLD}Wickeban Worktree Manager${NC}"
     echo ""
@@ -498,6 +639,8 @@ cmd_help() {
     echo "  cleanup [--dry-run]                          Remove merged worktrees"
     echo "  info <branch>                                Show worktree details"
     echo "  url [<branch>]                               Output dev URL"
+    echo "  share [<branch>]                             Start a cloudflared tunnel"
+    echo "  share stop [<branch>]                        Stop a running tunnel"
     echo "  help                                         Show this help"
     echo ""
     echo "Tiers:"
@@ -522,6 +665,7 @@ main() {
         cleanup) cmd_cleanup "$@" ;;
         info)    cmd_info "$@" ;;
         url)     cmd_url "$@" ;;
+        share)   cmd_share "$@" ;;
         help|--help|-h) cmd_help ;;
         *)       die "Unknown command: $command. Run 'bin/worktree help' for usage." ;;
     esac
